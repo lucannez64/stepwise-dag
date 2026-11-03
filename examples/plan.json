@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Ship a small feature, one verified step at a time",
+  "nodes": [
+    {"id":"SPEC","title":"Write observable acceptance criteria","area":"Design","size":"S","deps":[],"exit_check":"One accepted example and one rejected example are documented."},
+    {"id":"MODEL","title":"Define data and state transitions","area":"Design","size":"S","deps":["SPEC"],"exit_check":"Inputs, outputs and failure states are explicit."},
+    {"id":"CORE","title":"Implement the smallest working path","area":"Implementation","size":"S","deps":["MODEL"],"exit_check":"The accepted example runs through the core."},
+    {"id":"UI","title":"Connect the interface","area":"Implementation","size":"S","deps":["CORE"],"exit_check":"A user can complete the accepted flow."},
+    {"id":"TEST","title":"Exercise failure and recovery paths","area":"Verification","size":"S","deps":["CORE"],"hard":true,"exit_check":"Invalid input and interrupted work leave consistent state."},
+    {"id":"REVIEW","title":"Review the integrated feature","area":"Verification","size":"S","deps":["UI","TEST"],"exit_check":"Acceptance checks pass on the same commit; remaining limits are documented."}
+  ]
+}

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stepwise-dag"
+version = "0.1.0"
+description = "Dependency-first plans, a live dashboard, and a small agent-friendly CLI"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[project.scripts]
+stepwise = "stepwise.__main__:main"
+
+[tool.setuptools.package-data]
+stepwise = ["web/*"]
