@@ -90,6 +90,7 @@ def import_progress(data):
             steps[n['id']] = {'state': state, 'commit': n.get('commit') or '', 'retries': n.get('retries', 0)}
         for e in n.get('log', []):
             log.append({'step': n['id'], 't': e.get('time', ''), 'who': e.get('who', ''), 'msg': e.get('text', ''), 'kind': 'import'})
+    log.sort(key=lambda e: e.get('t', ''))
     return {'steps': steps, 'log': log}
 
 

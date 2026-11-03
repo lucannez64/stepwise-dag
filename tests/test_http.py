@@ -18,7 +18,7 @@ class ServerTests(unittest.TestCase):
                 url=process.stdout.readline().strip().split()[-1]
                 data=json.load(urllib.request.urlopen(url+'/api/state',timeout=5))
                 self.assertEqual(data['nodes'][0]['kind'],'ready')
-                self.assertIn(b'STEPWISE',urllib.request.urlopen(url,timeout=5).read())
+                self.assertIn(b'id="viewport"',urllib.request.urlopen(url,timeout=5).read())
                 def post(token,origin):
                     req=urllib.request.Request(url+'/api/step',data=json.dumps({'action':'done','id':'A','msg':'gate green'}).encode(),headers={'Content-Type':'application/json','X-Stepwise-Token':token,'Origin':origin})
                     return urllib.request.urlopen(req,timeout=5)

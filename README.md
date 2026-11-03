@@ -56,11 +56,11 @@ Kush's `desc`, embedded `status`, `commit` and logs are imported. VELA's `done` 
 
 ## Dashboard
 
-- Graph and numbered build-order views; zoom, pan and fit.
+- Compact graph workspace with a single toolbar, dependency-layer layout, direct/transitive edge highlighting, and a side-panel order list. Zoom, pan, Fit all and Readable controls.
 - Search, area and state filters; selection highlights ancestors and descendants.
 - Completion checks, prerequisites, work unblocked, risk flags, activity and retry counts.
-- Longest dependency chain, explicitly measured in steps rather than time.
-- Theme (system/light/dark), density, text size, graph direction, panel width and estimate visibility. Preferences persist in browser storage and never edit the plan.
+- Longest dependency chain highlighting, explicitly measured in steps rather than time.
+- Theme (system/light/dark), density, text size, graph direction, panel width and estimate visibility. Preferences persist in browser storage and never edit the plan. Compact, top-to-bottom layout is the default; customization controls stay collapsed.
 - Live refresh every three seconds. Updates are milestone reports, not automatic observation of agent work.
 - Keyboard-focusable nodes and controls, visible focus indicators, textual state labels and a build-order alternative to the graph.
 

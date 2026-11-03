@@ -11,3 +11,5 @@ The initial release was checked with:
 The CI workflow repeats the automated tests and package installation on Linux and macOS with Python 3.10 and 3.13. Those hosted runs have not been claimed as passed before they execute.
 
 Automated tests do not establish the semantic correctness of a project's dependency choices or its completion reports. Browser appearance, keyboard navigation, touch gestures and preference persistence require interactive browser checks; these are not claimed as covered by the Python tests.
+
+The compact-workspace revision was rendered against actual Kush and VELA snapshots. Desktop and reply-width layouts rendered without console errors. A render-time control smoke check exercised project switching, node selection, direct/transitive highlighting, the order panel and customization controls. This does not replace manual keyboard/touch testing.

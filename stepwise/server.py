@@ -23,7 +23,7 @@ def snapshot(plan_path, state_path, repo=None):
     data = dict(title=plan['title'], **derive(plan, state['steps']), log=state['log'][-200:][::-1])
     if repo:
         upstream = git(repo, 'rev-parse', '--abbrev-ref', '@{u}')
-        data['repo'] = dict(branch=git(repo, 'branch', '--show-current'), head=git(repo, 'rev-parse', '--short', 'HEAD'),
+        data['repo'] = dict(origin=git(repo, 'rev-parse', '--short', '@{u}'), dirty=bool(git(repo, 'status', '--porcelain')), worktrees=max(0,len((git(repo, 'worktree', 'list') or '').splitlines())-1), branch=git(repo, 'branch', '--show-current'), head=git(repo, 'rev-parse', '--short', 'HEAD'),
                             upstream=upstream, ahead=git(repo, 'rev-list', '--count', '@{u}..HEAD') if upstream else None,
                             freshness='Local tracking refs; no fetch performed')
         for n in data['nodes']:
