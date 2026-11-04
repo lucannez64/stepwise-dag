@@ -181,7 +181,8 @@ function selectStep(id, center = false) {
 function stackBar(c, cls = "stack") {
   const t = c.total || 1;
   const seg = (n, col) => n ? `<i style="width:${(100 * n / t).toFixed(2)}%;background:var(--${col})"></i>` : "";
-  return `<span class="${cls}">${seg(c.done, "done")}${seg(c.progress, "progress")}${seg(c.blocked, "blocked")}${seg(c.ready, "ready")}</span>`;
+  // "done" is always the first segment, so only it shows at full strength.
+  return `<span class="${cls}"><i style="width:${(100 * (c.done || 0) / t).toFixed(2)}%;background:var(--done)"></i>${seg(c.progress, "progress")}${seg(c.blocked, "blocked")}${seg(c.ready, "ready")}</span>`;
 }
 function statusDot(p) { return !p || p.loading ? "" : p.error ? (p.nodes || p.counts ? "stale" : "err") : "ok"; }
 
@@ -376,6 +377,9 @@ function renderToolbar() {
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
   const v = viewOf(data.id);
   document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === v));
+  const act = activeSteps();
+  $("actNav").hidden = v !== "graph" || act.length < 2;
+  $("actPos").textContent = `${Math.min(activeIdx, act.length - 1) + 1} / ${act.length}`;
   $("zoomCtl").hidden = v !== "graph"; $("dirBtn").hidden = v !== "graph"; $("edgeBtn").hidden = v !== "graph";
   const lr = dirOf(data.id) === "LR";
   $("dirBtn").innerHTML = lr
@@ -686,7 +690,14 @@ function focusWork() {
   if (!act.length) return fitAll();
   const near = new Set();
   act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
-  fitNodes([...near], 0.8, 1);
+  fitNodes([...near], 1, 1);
+}
+let activeIdx = 0;
+function activeSteps() { return data.order.map(id => byId[id]).filter(n => n.status === "progress" || n.status === "blocked"); }
+function stepActive(d) {
+  const a = activeSteps(); if (!a.length) return;
+  activeIdx = (activeIdx + d + a.length) % a.length;
+  focusNode(a[activeIdx].id); renderToolbar();
 }
 // Fit the camera around some steps, for example the critical path.
 function fitNodes(ids, floor = 0.45, ceil = 1.1) {
@@ -895,8 +906,12 @@ function overview() {
   const q = query.toLowerCase(), hits = q ? data.order.map(id => byId[id]).filter(n => matches(n, q)) : [];
   const found = q ? `<h3 style="margin-top:2px">Matches · ${hits.length}</h3>${linkList(hits.slice(0, 20).map(n => n.id), "No step matches.")}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
   // An active filter lists its steps first, so results stay readable whatever the zoom.
-  const fl = filter ? data.order.map(id => byId[id]).filter(n => n.status === filter) : critOn ? data.critical.map(id => byId[id]) : [];
-  const flist = filter || critOn ? `<h3 style="margin-top:2px">${critOn && !filter ? (data.critical_computed ? "Longest chain" : "Critical path") : LABEL[filter][0].toUpperCase() + LABEL[filter].slice(1)} · ${fl.length}</h3>${linkList(fl.map(n => n.id), "No steps.", !critOn)}` : "";
+  const { vis: fv } = visibility();
+  const chainName = data.critical_computed ? "longest chain" : "critical path";
+  const fl = (critOn && !filter ? data.critical : data.order).map(id => byId[id]).filter(n => !fv[n.id].excluded);
+  const head = filter ? LABEL[filter][0].toUpperCase() + LABEL[filter].slice(1) + (critOn ? ` on ${chainName}` : "") : chainName[0].toUpperCase() + chainName.slice(1);
+  const flist = filter || critOn ? `<h3 style="margin-top:2px">${head}${offAreas().size ? " in shown areas" : ""} · ${fl.length}</h3>${linkList(fl.map(n => n.id), "No steps match these filters.", !!filter)}
+    <button class="btn ghost small" data-reset-filters style="margin-top:6px">Reset filters</button>` : "";
   const help = viewOf(data.id) === "graph" ? "Click a step to see its details. Fit shows the whole graph." : "Click a step to see its details.";
   if (flist && !q) return `${problems}${flist}<p class="muted small">${help}</p>`;
   return `${problems}${found}
@@ -938,7 +953,7 @@ function detail(n) {
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
     ${actions(n, e)}
-    ${e.note && e.note !== n.check ? `<div class="note">${esc(e.note)}</div>` : ""}
+    ${e.note && e.note !== n.check ? `<h3>Latest note</h3><div class="note">${esc(e.note)}</div>` : ""}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
     ${conflict}${unmet}${check}${desc}${noCheck}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
@@ -1143,6 +1158,8 @@ $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
 $("zFit").onclick = () => fitAll();
 $("zFocus").onclick = () => focusWork();
+$("actPrev").onclick = () => stepActive(-1);
+$("actNext").onclick = () => stepActive(1);
 $("moreBtn").onclick = () => { const o = !$("toolbar").classList.contains("open"); $("toolbar").classList.toggle("open", o); $("moreBtn").setAttribute("aria-expanded", o); };
 $("qClear").onclick = () => { $("q").value = query = ""; renderStage(); $("q").focus(); };
 $("dirBtn").onclick = () => { prefs.dir[data.id] = dirOf(data.id) === "LR" ? "TB" : "LR"; savePrefs(); graph = null; renderProject(); };

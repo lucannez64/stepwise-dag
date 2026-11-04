@@ -295,8 +295,7 @@ table.t td.wrap { min-width: 220px; max-width: 420px; color: var(--sub1); }
 .meta span { font-size: 10.5px; color: var(--sub0); }
 h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--sub0); margin: 16px 0 6px; font-weight: 650; }
 h2 { font-size: 15px; margin: 0 0 4px; }
-.note { padding: 8px 10px; border-left: 3px solid var(--progress); background: color-mix(in srgb, var(--progress) 8%, transparent);
-  border-radius: 0 6px 6px 0; margin: 0 0 10px; word-break: break-word; }
+.note { padding: 9px 11px; border: 1px solid var(--s0); background: var(--card); border-radius: 8px; margin: 0 0 10px; word-break: break-word; color: var(--sub1); }
 .check { padding: 9px 11px; border: 1px solid var(--s0); border-radius: 8px; background: var(--card); word-break: break-word; }
 .check.empty { color: var(--o1); font-style: italic; }
 .commit { font-size: 12px; color: var(--sub0); margin: -4px 0 10px; display: flex; gap: 8px; align-items: center; }
@@ -345,8 +344,8 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 .empty { color: var(--o1); padding: 10px 0; font-size: 12px; }
 
 /* ---------- home ---------- */
-.homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
-.cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+.homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
+.cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 16px; align-content: start; align-items: start; }
 .card { background: var(--card); border: 1px solid var(--s0); border-radius: 12px; box-shadow: var(--shadow);
   padding: 16px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, transform .15s; }
@@ -596,4 +595,16 @@ table.t { font-size: 12.5px; }
   .tb-more { order: 6; }
   .minimap { display: none; }
   .card .sec-active, .card .sec-ready { min-height: 0; }
+}
+
+/* Latte: small green and blue labels use darker text tokens for contrast */
+:root[data-theme="latte"] .pill.done, :root[data-theme="latte"] .kind.done, :root[data-theme="latte"] .st-done { color: #28751f; fill: #28751f; }
+:root[data-theme="latte"] .pill.ready, :root[data-theme="latte"] .st-ready { color: #1550c8; fill: #1550c8; }
+:root[data-theme="latte"] .pill.blocked, :root[data-theme="latte"] .kind.block { color: #b00d30; }
+@media (hover: none) { .pop .keys, .pop .keys + .btns ~ *, .pop h3:has(+ .keys) { display: none; } }
+@media (max-width: 900px) {
+  .btn, .tog, .seg button, .iconbtn, .links li { min-height: 44px; }
+  .iconbtn { width: 44px; height: 44px; }
+  .btns { gap: 8px; }
+  #actNav { order: 7; }
 }
