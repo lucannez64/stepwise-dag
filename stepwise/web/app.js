@@ -295,7 +295,10 @@ function closeMenus() {
 document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, #switchBtn, #prefsBtn, #areaMenu, #areaBtn")) closeMenus(); });
 
 // ------------------------------------------------------------------ home ----
+// Every home card has the same ten rows, so sections line up across a row of cards.
+const SLOT = '<div class="slot"></div>';
 function renderHome() {
+  parkBar();
   renderChrome();
   const main = $("main");
   if (!$("cards") || !$("feed")) main.innerHTML = `<div class="homegrid"><div class="cards" id="cards"></div><aside class="feed" id="feed"></aside></div>`;
@@ -314,12 +317,12 @@ function renderHome() {
       <div class="big"><b>${pct}%</b><span>${c.done} of ${c.total} steps done</span></div>
       ${stackBar(c)}
       <div class="counts">${sw("progress", c.progress, "in progress")}${c.blocked ? sw("blocked", c.blocked, "blocked") : ""}${sw("ready", c.ready, "ready")}<span><i class="sw" style="background:var(--s1)"></i><b>${c.waiting}</b> waiting</span>${c.unpushed ? sw("peach", c.unpushed, "not pushed") : ""}</div>
-      ${p.problems && p.problems.length ? `<div class="errbox slot-problems">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : ""}
-      ${p.active.length ? `<div class="sec-active"><h3>In progress</h3><ul>${active}</ul></div>` : ""}
+      ${p.problems && p.problems.length ? `<div class="errbox slot-problems">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : SLOT}
+      ${p.active.length ? `<div class="sec-active"><h3>In progress</h3><ul>${active}</ul></div>` : SLOT}
       ${ready ? `<details class="sec-ready"${phone() ? "" : " open"}><summary><h3>${phone() ? `Show next steps · ${p.ready.length}` : "Ready next"}</h3></summary><ul>${ready}</ul></details>`
-        : p.active.length ? "" : '<div class="empty">Nothing ready</div>'}
-      ${p.critical && p.critical.total ? `<div class="crit-line"><span class="muted small">${p.critical.computed ? "Longest chain" : "Critical path"}</span>${stackBar({ done: p.critical.done, total: p.critical.total, progress: 0, blocked: 0, ready: 0 }, "stack thin")}<span class="small"><b>${p.critical.done}</b>/${p.critical.total}</span></div>` : ""}
-      ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 80))}</div>` : ""}
+        : p.active.length ? SLOT : '<div class="empty">Nothing ready</div>'}
+      ${p.critical && p.critical.total ? `<div class="crit-line"><span class="muted small">${p.critical.computed ? "Longest chain" : "Critical path"}</span>${stackBar({ done: p.critical.done, total: p.critical.total, progress: 0, blocked: 0, ready: 0 }, "stack thin")}<span class="small"><b>${p.critical.done}</b>/${p.critical.total}</span></div>` : SLOT}
+      ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 80))}</div>` : SLOT}
       <div class="foot">${r ? `<span><b>${esc(r.head || "?")}</b> ${esc(r.branch || "")}</span><span><b>${r.ahead ?? "–"}</b> ahead${r.dirty ? " · dirty" : ""}</span>` : ""}${p.load ? `<span>load <b>${p.load[0].toFixed(2)}</b></span>` : ""}${p.box ? `<span>box <b>${p.box[0].toFixed(2)}</b></span>` : ""}</div>
     </article>`;
   }).join("");
@@ -344,6 +347,7 @@ const kindBadge = k => k ? `<span class="kind ${esc(k)}">${esc(k === "undo" ? "r
 
 // --------------------------------------------------------------- project ----
 function renderProject(routeOnly = false) {
+  parkBar();
   renderChrome();
   const main = $("main");
   if (projects.length && !projects.some(p => p.id === route.project)) {
@@ -421,7 +425,7 @@ function focusSets() {
   return { up: walk(s, "deps"), down: walk(s, "users"), direct: false };
 }
 function visibility() {
-  const q = query.toLowerCase(), off = offAreas(), f = focusSets(), crit = new Set(data.critical), s = sel();
+  const q = query.toLowerCase(), off = offAreas(), f = q ? null : focusSets(), crit = new Set(data.critical), s = q ? null : sel();
   const out = {};
   for (const n of data.nodes) {
     const match = !!q && matches(n, q);
@@ -436,6 +440,7 @@ function visibility() {
 // ----------------------------------------------------------------- stage ----
 function renderStage(routeOnly) {
   hideTip();
+  if (viewOf(data.id) !== "graph" || !graph) parkBar();
   const stage = $("stage"), v = viewOf(data.id);
   stage.className = "stage " + v;
   if (v === "graph") {
@@ -614,7 +619,7 @@ function updateGraph() {
     const e = graph.els[n.id];
     if (!e) continue;
     const v = vis[n.id];
-    e.g.setAttribute("class", `node ${n.status}${n.unpushed ? " unpushed" : ""}${n.id === s ? " sel" : ""}${v.match ? " match" : ""}${v.dim ? " dim" : ""}`);
+    e.g.setAttribute("class", `node ${n.status}${n.unpushed ? " unpushed" : ""}${n.id === s ? " sel" : ""}${v.match ? " match" : ""}${v.dim ? " dim" : ""}${v.excluded ? " ex" : ""}`);
     e.g.setAttribute("aria-label", `${n.id}: ${n.title}. ${LABEL[n.status]}${n.unpushed ? ", not pushed" : ""}.`);
     e.st.textContent = n.unpushed ? "↑ unpushed" : SHORT[n.status];
     e.st.setAttribute("class", `st st-${n.status}`);
@@ -626,10 +631,16 @@ function updateGraph() {
       else cls += (e.to === s || f.up.has(e.to)) && f.up.has(e.from) ? " up" : (e.from === s || f.down.has(e.from)) && f.down.has(e.to) ? " down" : " dim";
     } else if (critOn) cls += critEdges.has(e.from + ">" + e.to) ? " crit" : " dim";
     else if (vis[e.from].dim || vis[e.to].dim) cls += " dim";
+    if (vis[e.from].excluded || vis[e.to].excluded) cls += " ex";
     e.el.setAttribute("class", cls);
   }
+  const narrowing = !!(filter || critOn || query || offAreas().size);
+  graph.svg.classList.toggle("hide-ex", narrowing && !showContext);
+  $("ctxBtn").hidden = !narrowing;
+  $("ctxBtn").setAttribute("aria-pressed", showContext);
   renderLegend();
 }
+let showContext = false;
 
 function renderLegend() {
   const lg = $("legend");
@@ -645,6 +656,8 @@ function renderLegend() {
 
 // Graph navigation sits in the canvas corner, not in the toolbar.
 let cbar = null;
+// Before a view or project replaces the canvas, move its controls somewhere safe.
+function parkBar() { if (cbar && cbar.parentNode !== $("park")) $("park").appendChild(cbar); }
 function canvasBar() {
   if (!cbar) {
     cbar = document.createElement("div");
@@ -917,13 +930,13 @@ const linkList = (ids, empty, plain = false) => `<ul class="links">${ids.map(id 
 
 function renderPanel() {
   const p = $("panel"), keep = p.scrollTop, s = sel();
-  $("app").classList.toggle("sheet", !!s);
+  $("app").classList.toggle("sheet", !!s && !query);
   // The table needs the width; its overview panel comes back when a row is selected.
   $("work").classList.toggle("wide", viewOf(data.id) === "table" && !s);
   const focused = document.activeElement && document.activeElement.id === "noteIn";
   // An unsent note belongs to its step, so it never follows the selection elsewhere.
   if ($("noteIn") && $("noteIn").dataset.key) drafts.set($("noteIn").dataset.key, $("noteIn").value);
-  p.innerHTML = s ? detail(byId[s]) : overview();
+  p.innerHTML = s && !query ? detail(byId[s]) : overview();
   if ($("noteIn")) {
     const key = data.id + "/" + s;
     $("noteIn").dataset.key = key; $("noteIn").value = drafts.get(key) || "";
@@ -987,10 +1000,11 @@ function detail(n) {
     <div class="dtitle">${esc(n.title)}</div>
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
+    ${check}
     ${actions(n, e)}
     ${e.note && e.note !== n.check ? `<h3>Latest note</h3><div class="note">${esc(e.note)}</div>` : ""}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
-    ${conflict}${unmet}${check}${desc}${noCheck}
+    ${conflict}${unmet}${desc}${noCheck}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
     <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>
@@ -1164,7 +1178,7 @@ $("toolbar").addEventListener("click", e => {
   if (f) {
     filter = f.dataset.filter || null;
     renderProject();
-    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.order.filter(id => byId[id].status === filter), 0.8, 1);
+    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.order.filter(id => byId[id].status === filter), 1, 1);
     return;
   }
 });
@@ -1189,7 +1203,8 @@ $("areaMenu").addEventListener("change", e => {
   box.checked ? off.delete(box.dataset.area) : off.add(box.dataset.area);
   renderProject();
 });
-$("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical, 0.8, 1); };
+$("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical, 1, 1); };
+$("ctxBtn").onclick = () => { showContext = !showContext; if (graph) updateGraph(); };
 $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "direct" ? "all" : "direct"; savePrefs(); renderProject(); };
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);

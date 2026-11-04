@@ -669,3 +669,23 @@ svg.far .edge:not(.up):not(.down):not(.crit) { stroke-width: .8; opacity: .45; }
   /* rows keep their natural height; leftover space stays at the bottom */
   .app { align-content: start; }
 }
+
+/* filters hide what they leave out, unless "Show context" is on */
+svg.hide-ex .node.ex, svg.hide-ex .edge.ex { display: none; }
+/* phone table: id and status, then the full title */
+@media (max-width: 900px) {
+  table.t thead { display: none; }
+  table.t, table.t tbody { display: block; }
+  table.t tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "id st" "t t"; gap: 2px 10px; padding: 10px 12px;
+    border-bottom: 1px solid var(--s0); min-height: 44px; }
+  table.t td { display: none; padding: 0; border: 0; }
+  table.t td.c-id { display: block; grid-area: id; } table.t td.c-status { display: block; grid-area: st; }
+  table.t td.c-title { display: block; grid-area: t; min-width: 0; white-space: normal; color: var(--sub1); }
+}
+/* home: sections and footers line up across a row */
+@media (min-width: 901px) {
+  .cards { grid-auto-rows: auto; }
+  .card { display: grid; grid-template-rows: subgrid; grid-row: span 10; gap: 12px; }
+  .card .slot { min-height: 0; }
+  .card .sec-active, .card .sec-ready { min-height: 0; }
+}
