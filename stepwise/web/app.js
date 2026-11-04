@@ -129,6 +129,7 @@ function applyRoute() {
   const switched = r.project !== route.project;
   route = r;
   closeMenus();
+  hideTip(); hovered = null;
   if (switched) {
     filter = null; critOn = false; query = ""; $("q").value = "";
     if (route.project) {
@@ -257,7 +258,7 @@ function renderHome() {
   renderChrome();
   const main = $("main");
   if (!$("cards") || !$("feed")) main.innerHTML = `<div class="homegrid"><div class="cards" id="cards"></div><aside class="feed" id="feed"></aside></div>`;
-  if (!projects.length) { $("cards").innerHTML = `<div class="empty">${hubErr ? "Cannot reach the hub: " + esc(hubErr) : "Loading projects…"}</div>`; $("feed").innerHTML = ""; return; }
+  if (!projects.length) { $("cards").innerHTML = hubErr ? `<div class="errbox">Cannot reach the hub: ${esc(hubErr)}</div>` : `<div class="card skel"></div><div class="card skel"></div>`; $("feed").innerHTML = ""; return; }
   $("cards").innerHTML = projects.map((p, i) => {
     const c = p.counts;
     if (!c) return `<article class="card" tabindex="0" data-go="${esc(p.id)}"><div class="top"><div><h2>${esc(p.title)}</h2><div class="where">${esc(p.host)}</div></div>${i < 9 ? `<span class="kbd">${i + 1}</span>` : ""}</div>
@@ -297,11 +298,16 @@ function renderProject(routeOnly = false) {
   renderChrome();
   const main = $("main");
   if (!data || data.id !== route.project) {
-    main.innerHTML = `<div class="homegrid" style="grid-template-columns:1fr"><div class="cards"><div class="empty">Loading ${esc(route.project)}…</div></div></div>`;
+    main.innerHTML = `<div class="loading" aria-busy="true" aria-label="Loading ${esc(route.project)}"><div class="skel-graph">${Array.from({ length: 18 }, (_, i) => `<i style="animation-delay:${(i % 6) * 80}ms"></i>`).join("")}</div><div class="skel-side"><i></i><i></i><i></i><i></i></div></div>`;
     return;
   }
   if (!data.nodes) {
-    main.innerHTML = `<div class="homegrid" style="grid-template-columns:1fr"><div class="cards"><article class="card"><h2>${esc(data.title)}</h2><div class="errbox">${esc(data.error || "Not loaded yet")}</div><div class="muted small">Source: ${esc(data.host)} · ${esc(data.format)} format. The hub retries every few seconds.</div></article></div></div>`;
+    main.innerHTML = `<div class="state-msg"><div class="state-card">
+      <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0"/><path d="M3 3l18 18"/><circle cx="12" cy="19" r="1" fill="currentColor"/></g></svg>
+      <h2>Can't read ${esc(data.title)} right now</h2>
+      <p class="muted">${esc(data.error || "Not loaded yet")}</p>
+      <p class="muted small">The plan lives on ${esc(data.host)}. The hub keeps retrying every few seconds and this page updates by itself. If the machine has another route (say its Tailscale name), list both under <code>host</code> in hub.json.</p>
+      <button class="btn" onclick="location.hash='#/'">Back to all projects</button></div></div>`;
     return;
   }
   if (!main.querySelector(".work")) {
@@ -320,7 +326,7 @@ function renderToolbar() {
   const c = data.counts;
   $("nProg").textContent = c.progress; $("nReady").textContent = c.ready; $("nBlocked").textContent = c.blocked;
   $("fBlocked").hidden = !c.blocked && filter !== "blocked";
-  document.querySelectorAll("[data-filter]").forEach(b => b.setAttribute("aria-pressed", filter === b.dataset.filter));
+  document.querySelectorAll("[data-filter]").forEach(b => b.setAttribute("aria-pressed", (filter || "") === b.dataset.filter));
   $("critBtn").setAttribute("aria-pressed", critOn);
   $("critBtn").title = data.critical_computed ? "Longest chain of steps (computed: counts steps, not time) (c)" : "Critical path from the plan (c)";
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
@@ -619,6 +625,7 @@ function bindGraph(svg) {
     }
     const n = e.target.closest(".node");
     if (n && e.pointerType === "mouse") showTip(n.dataset.id, e); else hideTip();
+    hoverLinks(n && e.pointerType === "mouse" ? n.dataset.id : null);
   });
   const end = e => {
     pts.delete(e.pointerId);
@@ -631,11 +638,20 @@ function bindGraph(svg) {
   };
   svg.addEventListener("pointerup", end);
   svg.addEventListener("pointercancel", end);
-  svg.addEventListener("pointerleave", hideTip);
+  svg.addEventListener("pointerleave", () => { hideTip(); hoverLinks(null); });
   svg.addEventListener("keydown", e => {
     const n = e.target.closest(".node");
     if (n && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); selectStep(n.dataset.id); }
   });
+}
+
+// Hovering a step previews its direct links, without changing the selection.
+let hovered = null;
+function hoverLinks(id) {
+  if (id === hovered || !graph) return;
+  hovered = id;
+  for (const e of graph.edges) e.el.classList.toggle("hov", !!id && !sel() && (e.from === id || e.to === id));
+  for (const nid in graph.els) graph.els[nid].g.classList.toggle("hov", nid === id);
 }
 
 // tooltip
@@ -909,7 +925,7 @@ $("toolbar").addEventListener("click", e => {
   const v = e.target.closest("[data-view]");
   if (v) { prefs.view[data.id] = v.dataset.view; savePrefs(); return renderProject(); }
   const f = e.target.closest("[data-filter]");
-  if (f) { filter = filter === f.dataset.filter ? null : f.dataset.filter; return renderProject(); }
+  if (f) { filter = f.dataset.filter || null; return renderProject(); }
 });
 $("chiprow").addEventListener("click", e => {
   if (!data || !data.nodes) return;

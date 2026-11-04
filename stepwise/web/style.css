@@ -117,6 +117,9 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .search .count { position: absolute; right: 8px; font-size: 11px; color: var(--sub0); }
 .seg { display: inline-flex; padding: 2px; border: 1px solid var(--s1); border-radius: 8px; background: var(--base); }
 .seg button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: none; cursor: pointer; color: var(--sub1); }
+.seg button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.seg .sw { width: 8px; height: 8px; border-radius: 50%; }
+.seg .n { font-size: 11px; color: var(--sub0); font-variant-numeric: tabular-nums; }
 .seg button[aria-pressed="true"] { background: var(--card); color: var(--text); font-weight: 600;
   box-shadow: 0 1px 2px rgb(0 0 0 / .15); }
 .tog { height: 30px; padding: 0 10px; border: 1px solid var(--s1); border-radius: 7px; background: var(--card);
@@ -163,10 +166,12 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .sechead h3 { margin: 0; }
 
 /* graph */
-.edge { fill: none; stroke: var(--s2); stroke-width: 1.3; }
-.edge.up { stroke: var(--needs); stroke-width: 2.3; }
-.edge.down { stroke: var(--unblocks); stroke-width: 2.3; }
-.edge.crit { stroke: var(--crit); stroke-width: 2.6; }
+.edge { fill: none; stroke: var(--s2); stroke-width: 1.2; opacity: .75; transition: opacity .15s; }
+.edge.hov { stroke: var(--o2); stroke-width: 2; opacity: 1; }
+.node.hov .box { stroke: var(--o2); }
+.edge.up { stroke: var(--needs); stroke-width: 2.3; opacity: 1; }
+.edge.down { stroke: var(--unblocks); stroke-width: 2.3; opacity: 1; }
+.edge.crit { stroke: var(--crit); stroke-width: 2.6; opacity: 1; }
 .edge.dim { opacity: .1; }
 .node { cursor: pointer; }
 .node .box { fill: var(--card); stroke: var(--s1); stroke-width: 1; }
@@ -411,3 +416,25 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .orow .t, .orow .r { grid-column: 3; }
   .pop { right: 8px; left: 8px; width: auto; }
 }
+
+/* loading skeletons */
+.loading { display: grid; grid-template-columns: minmax(0, 1fr) var(--panel-w); height: 100%; }
+.skel-graph { display: grid; grid-template-columns: repeat(6, 1fr); gap: 26px 22px; padding: 40px; align-content: start; }
+.skel-graph i, .skel-side i, .card.skel { display: block; border-radius: 8px;
+  background: linear-gradient(90deg, var(--s0) 0%, color-mix(in srgb, var(--s0) 45%, var(--base)) 50%, var(--s0) 100%);
+  background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; opacity: .7; }
+.skel-graph i { height: 52px; }
+.skel-side { border-left: 1px solid var(--s0); background: var(--panel); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.skel-side i { height: 40px; } .skel-side i:first-child { height: 22px; width: 60%; }
+.card.skel { min-height: 300px; cursor: default; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel-graph i, .skel-side i, .card.skel { animation: none; } }
+@media (max-width: 900px) { .loading { grid-template-columns: 1fr; } .skel-side { display: none; } .skel-graph { grid-template-columns: repeat(2, 1fr); padding: 16px; } }
+
+/* load error */
+.state-msg { display: grid; place-items: center; height: 100%; padding: 24px; }
+.state-card { max-width: 460px; text-align: center; padding: 28px; border: 1px solid var(--s0); border-radius: 14px; background: var(--card); box-shadow: var(--shadow); }
+.state-card svg { color: var(--peach); margin-bottom: 8px; }
+.state-card h2 { font-size: 17px; margin-bottom: 6px; }
+.state-card p { margin: 6px 0; word-break: break-word; }
+.state-card .btn { margin-top: 12px; }
