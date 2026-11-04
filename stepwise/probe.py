@@ -48,7 +48,7 @@ def repo_facts(repo, commits):
         "upstream": upstream,
         "origin": git(repo, "rev-parse", "--short", upstream) if upstream else None,
         "ahead": None,
-        "dirty": bool(git(repo, "status", "--porcelain", "--untracked-files=no")),
+        "dirty": bool(git(repo, "status", "--porcelain")),
         "worktrees": max(0, len((git(repo, "worktree", "list") or "").splitlines()) - 1),
         "pushed": {},
     }

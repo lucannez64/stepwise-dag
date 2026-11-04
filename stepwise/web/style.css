@@ -189,7 +189,12 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 @keyframes pulse { from { opacity: .75; stroke-width: 1; } to { opacity: 0; stroke-width: 12; } }
 .node.sel .box { stroke: var(--text); stroke-width: 2.6; }
 .node.match .box { stroke: var(--lavender); stroke-width: 2.6; }
-.node.dim { opacity: .2; }
+/* Dimmed steps stay solid, so highlighted links do not show through them. */
+.node.dim .box { fill: var(--base); stroke: var(--s0); stroke-width: 1; stroke-dasharray: none; }
+.node.dim text, .node.dim rect:not(.box) { opacity: .3; }
+:root[data-theme="latte"] .node.dim .box { stroke: var(--s1); }
+:root[data-theme="latte"] .node.dim text, :root[data-theme="latte"] .node.dim rect:not(.box) { opacity: .45; }
+.node.dim .pulse { display: none; }
 .node:focus { outline: none; }
 .node:focus-visible .box { stroke: var(--lavender); stroke-width: 3; }
 .node text { fill: var(--sub1); font-size: 12px; font-family: var(--sans); }
@@ -229,7 +234,7 @@ svg.far .lvl { font-size: 22px; }
 .listhead { position: sticky; top: 0; z-index: 2; display: flex; gap: 10px; align-items: baseline; padding: 10px 16px 8px;
   background: var(--base); border-bottom: 1px solid var(--s0); font-size: 12px; color: var(--sub0); }
 .listhead b { color: var(--text); font-size: 13px; }
-.orow { display: grid; grid-template-columns: 44px 12px minmax(120px, 190px) minmax(0, 1fr) auto; gap: 10px; align-items: center;
+.orow { display: grid; grid-template-columns: 44px 12px max-content minmax(0, 1fr) auto; gap: 10px; align-items: center;
   padding: 6px 16px; border-bottom: 1px solid color-mix(in srgb, var(--s0) 60%, transparent); cursor: pointer; }
 .orow:hover { background: var(--mantle); }
 .orow.sel { background: color-mix(in srgb, var(--lavender) 14%, var(--base)); }
@@ -237,7 +242,8 @@ svg.far .lvl { font-size: 22px; }
 .orow .n { font: 11px var(--mono); color: var(--o1); text-align: right; }
 .orow .id { font: 600 12px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.orow .r { font-size: 11.5px; color: var(--sub0); white-space: nowrap; }
+.orow .r { font-size: 11.5px; color: var(--sub0); white-space: nowrap; display: flex; gap: 10px; align-items: center; }
+.pill.sm { height: 20px; font-size: 11px; padding: 0 8px; }
 .lvlrow { padding: 12px 16px 4px; font: 600 10.5px var(--mono); color: var(--o1); letter-spacing: .05em; }
 .dot { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--o0); }
 .dot.done { background: var(--done); border-color: var(--done); }
@@ -337,7 +343,7 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 /* ---------- home ---------- */
 .homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
 .cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-  gap: 16px; align-content: start; }
+  gap: 16px; align-content: start; align-items: start; }
 .card { background: var(--card); border: 1px solid var(--s0); border-radius: 12px; box-shadow: var(--shadow);
   padding: 16px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, transform .15s; }
 .card:hover { border-color: var(--o0); }
@@ -350,6 +356,8 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 .big b { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .big span { color: var(--sub0); }
 .stack { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--s0); }
+/* Only "done" counts as progress; in progress and ready are lighter so 0% never looks partly done. */
+.stack i:not(:first-child), .donebar .bar i:not(:first-child) { opacity: .45; }
 .stack i { height: 100%; }
 .counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--sub0); }
 .counts span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -488,4 +496,11 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .grab { display: block; width: 44px; height: 5px; border: 0; border-radius: 3px; background: var(--s2); margin: 0 auto 10px; cursor: pointer; }
   table.t .c-order, table.t .c-area, table.t .c-level, table.t .c-size, table.t .c-check, table.t .c-deps, table.t .c-updated, table.t .c-who { display: none; }
   .areamenu { width: calc(100vw - 24px); position: fixed; left: 12px; right: 12px; top: auto; }
+}
+
+/* the panel shows it can scroll */
+.panel { mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
+@media (max-width: 900px) {
+  .menu { position: fixed; left: 8px; right: 8px; top: 56px; min-width: 0; width: auto; }
+  .panel { mask-image: none; }
 }

@@ -76,18 +76,18 @@ def ssh_opts():
 
 
 def ssh_cmd(host, remote):
-    return ["ssh", *ssh_opts(), host, remote]
+    return ["ssh", *ssh_opts(), "--", host, remote]
 
 
 def drop_connection(host):
     """Close the shared SSH connection so the next call opens a fresh one."""
     try:
-        subprocess.run(["ssh", *ssh_opts(), "-O", "exit", host], capture_output=True, timeout=5)
+        subprocess.run(["ssh", *ssh_opts(), "-O", "exit", "--", host], capture_output=True, timeout=5)
     except (OSError, subprocess.SubprocessError):
         pass
     # A frozen connection ignores "exit"; removing its socket makes the next call start fresh.
     try:
-        out = subprocess.run(["ssh", *ssh_opts(), "-G", host], capture_output=True, text=True, timeout=5).stdout
+        out = subprocess.run(["ssh", *ssh_opts(), "-G", "--", host], capture_output=True, text=True, timeout=5).stdout
         path = next((line.split(None, 1)[1] for line in out.splitlines() if line.startswith("controlpath ")), None)
         if path and Path(path).parent == SSH_DIR:
             Path(path).unlink(missing_ok=True)
@@ -152,7 +152,10 @@ def normalize(fmt, raw):
         if fmt == "kush":
             entries = [e for e in n.get("log") or [] if isinstance(e, dict)]
             for e in entries:
-                log.append({"t": kush_time(e.get("time")), "step": node["id"], "kind": "",
+                text = str(e.get("text") or "")
+                kind = ("start" if text == "started" else "done" if text.startswith("done") else
+                        "undo" if text == "reset" else "log")
+                log.append({"t": kush_time(e.get("time")), "step": node["id"], "kind": kind,
                             "who": str(e.get("who") or ""), "msg": str(e.get("text") or "")})
             status = n.get("status") or "todo"
             last = entries[-1] if entries else {}

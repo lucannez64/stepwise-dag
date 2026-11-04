@@ -363,7 +363,7 @@ function renderToolbar() {
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
   const v = viewOf(data.id);
   document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === v));
-  $("zoomCtl").hidden = v !== "graph"; $("dirBtn").hidden = v !== "graph";
+  $("zoomCtl").hidden = v !== "graph"; $("dirBtn").hidden = v !== "graph"; $("edgeBtn").hidden = v !== "graph";
   const lr = dirOf(data.id) === "LR";
   $("dirBtn").innerHTML = lr
     ? `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="9" width="6" height="6" rx="1.5"/><rect x="16" y="4" width="6" height="6" rx="1.5"/><rect x="16" y="14" width="6" height="6" rx="1.5"/><path d="M8 12h4m0 0c2 0 2-5 4-5m-4 5c2 0 2 5 4 5"/></g></svg>`
@@ -398,14 +398,15 @@ function visibility() {
     const match = !!q && matches(n, q);
     const related = !f || viewOf(data.id) !== "graph" || n.id === s || f.up.has(n.id) || f.down.has(n.id);
     // Every active filter dims what it excludes, as both original dashboards did.
-    const dim = !related || off.has(n.area) || (filter && n.status !== filter) || (critOn && !crit.has(n.id)) || (q && !match);
-    out[n.id] = { dim, match };
+    const excluded = off.has(n.area) || (filter && n.status !== filter) || (critOn && !crit.has(n.id)) || (q && !match);
+    out[n.id] = { dim: !related || excluded, excluded, match };
   }
   return { vis: out, f, crit };
 }
 
 // ----------------------------------------------------------------- stage ----
 function renderStage(routeOnly) {
+  hideTip();
   const stage = $("stage"), v = viewOf(data.id);
   stage.className = "stage " + v;
   if (v === "graph") {
@@ -421,7 +422,12 @@ function renderStage(routeOnly) {
   $("qCount").hidden = !q; $("qClear").hidden = !q; $("qKbd").hidden = !!q; $("qCount").textContent = q ? `${n}` : "";
   $("qCount").title = q ? `${n} step${n === 1 ? "" : "s"} match` : "";
   let nm = $("stage").querySelector(".nomatch");
-  if (q && !n) {
+  const shownVis = v === "graph" ? visibility().vis : null;
+  const anyShown = !shownVis || data.nodes.some(x => !shownVis[x.id].excluded);
+  if (v === "graph" && !anyShown && !q) {
+    if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
+    nm.innerHTML = `No steps match these filters. <button class="btn ghost small" data-reset-filters>Reset filters</button>`;
+  } else if (q && !n) {
     if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
     nm.innerHTML = `No step matches “${esc(query)}”. <button class="btn ghost small" data-clear-q>Clear search</button>`;
   } else nm?.remove();
@@ -602,7 +608,13 @@ function applyCam() {
   const dg = $("stage").querySelector(".dotgrid");
   if (dg) { dg.style.backgroundSize = `${22 * c.k}px ${22 * c.k}px`; dg.style.backgroundPosition = `${c.tx}px ${c.ty}px`; }
 }
-function setCam(k, tx, ty) { cams.set(data.id, { k: Math.min(3, Math.max(0.08, k)), tx, ty, sig: graph.sig }); applyCam(); }
+function setCam(k, tx, ty) {
+  hideTip();
+  if (graph) {
+    const r = $("stage").getBoundingClientRect(), w = graph.worldW * k, h = graph.worldH * k;
+    if (h > r.height) ty = Math.min(8, Math.max(r.height - h - 8, ty)); else ty = Math.max(8, Math.min(ty, r.height - h - 8));
+    if (w > r.width) tx = Math.min(8, Math.max(r.width - w - 8, tx));
+  } cams.set(data.id, { k: Math.min(3, Math.max(0.08, k)), tx, ty, sig: graph.sig }); applyCam(); }
 function fitAll() {
   const r = $("stage").getBoundingClientRect();
   const k = Math.min(1.2, (r.width - 24) / graph.worldW, (r.height - 24) / graph.worldH);
@@ -728,6 +740,7 @@ function showTip(id, e) {
 function hideTip() { tip.style.display = "none"; }
 
 // order + table
+const noRows = () => `<div class="state-msg" style="height:auto;padding:48px 16px"><div class="state-card"><h2>No steps match</h2><p class="muted">The search or filters hide every step.</p><button class="btn" data-reset-filters>Reset filters</button></div></div>`;
 const listScroll = () => { const l = $("stage").querySelector(".list"); return l ? l.scrollTop : 0; };
 function keepScroll(top, s) {
   const l = $("stage").querySelector(".list");
@@ -742,12 +755,13 @@ function keepScroll(top, s) {
 }
 function renderOrder() {
   const { vis } = visibility(), s = sel(), top = listScroll();
-  const rows = data.order.map(id => byId[id]).map(n => {
+  const rows = data.order.map(id => byId[id]).filter(n => !vis[n.id].excluded).map(n => {
     const e = entry(n.id);
-    const right = [data.areas[n.area] && esc(data.areas[n.area]), n.size && esc(n.size), n.hard && '<span style="color:var(--red)">hard</span>',
-      n.status === "progress" ? `<span style="color:var(--progress)">${since(e)}</span>` : `<span class="${n.status}">${LABEL[n.status]}${n.unpushed ? ", not pushed" : ""}</span>`].filter(Boolean).join(" · ");
-    return `<div class="orow${n.id === s ? " sel" : ""}${vis[n.id].dim ? " dim" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${right}</span></div>`;
-  }).join("");
+    const area = data.areas[n.area] && n.area !== n.status && data.areas[n.area] !== n.status ? esc(data.areas[n.area]) : "";
+    const meta = [area, n.size && esc(n.size), n.hard && '<span style="color:var(--red)">hard</span>'].filter(Boolean).join(" · ");
+    const state = n.status === "progress" ? `<span class="pill progress sm">${esc(since(e))}</span>` : `<span class="pill ${n.unpushed ? "unpushed" : n.status} sm">${n.unpushed ? "not pushed" : LABEL[n.status]}</span>`;
+    return `<div class="orow${n.id === s ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${meta ? `<span class="muted">${meta}</span>` : ""}${state}</span></div>`;
+  }).join("") || noRows();
   $("stage").innerHTML = `<div class="list"><div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
   keepScroll(top, s);
 }
@@ -761,21 +775,21 @@ const COLS = [
 function renderTable() {
   const { vis } = visibility(), s = sel(), top = listScroll();
   const col = COLS.find(c => c[0] === tableSort.key) || COLS[0];
-  const rows = data.nodes.slice().sort((a, b) => {
+  const rows = data.nodes.filter(n => !vis[n.id].excluded).sort((a, b) => {
     const x = col[2](a), y = col[2](b);
     return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * tableSort.dir || a.order - b.order;
   });
   const head = COLS.map(c => `<th class="c-${c[0]}" data-sort="${c[0]}" aria-sort="${tableSort.key === c[0] ? (tableSort.dir > 0 ? "ascending" : "descending") : "none"}">${c[1]}${tableSort.key === c[0] ? ` <span class="ar">${tableSort.dir > 0 ? "↑" : "↓"}</span>` : ""}</th>`).join("");
   const body = rows.map(n => {
     const e = entry(n.id) || {};
-    return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}${vis[n.id].dim ? " dim" : ""}" tabindex="0">
+    return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}" tabindex="0">
       <td class="muted c-order">${n.order}</td><td class="id c-id">${esc(n.id)}</td><td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
       <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
       <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
   }).join("");
-  $("stage").innerHTML = `<div class="list"><table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  $("stage").innerHTML = `<div class="list"><table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : noRows()}</div>`;
   keepScroll(top, s);
 }
 $("main").addEventListener("click", e => {
@@ -924,6 +938,7 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-local]")) { toggleStatic(sel()); return; }
   if (e.target.closest("[data-showall]")) return selectStep(null);
   if (e.target.closest("[data-clear-q]")) { $("q").value = query = ""; return renderStage(); }
+  if (e.target.closest("[data-reset-filters]")) { $("q").value = query = ""; filter = null; critOn = false; offAreas().clear(); return renderProject(); }
 });
 $("main").addEventListener("keydown", e => {
   if (e.target.id === "noteIn" && e.key === "Enter") { e.preventDefault(); if (document.querySelector('[data-act="log"]')) act("log"); }
@@ -984,7 +999,12 @@ $("toolbar").addEventListener("click", e => {
   const v = e.target.closest("[data-view]");
   if (v) { prefs.view[data.id] = v.dataset.view; savePrefs(); return renderProject(); }
   const f = e.target.closest("[data-filter]");
-  if (f) { filter = f.dataset.filter || null; return renderProject(); }
+  if (f) {
+    filter = f.dataset.filter || null;
+    renderProject();
+    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.nodes.filter(n => n.status === filter).map(n => n.id));
+    return;
+  }
 });
 $("areaBtn").onclick = e => {
   e.stopPropagation();
