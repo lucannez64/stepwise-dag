@@ -31,7 +31,8 @@ darkQuery.addEventListener("change", () => { if (prefs.theme === "system") apply
 // ------------------------------------------------------------------- state --
 const LABEL = { done: "done", progress: "in progress", blocked: "blocked", ready: "ready", waiting: "waiting" };
 const GLYPH = { done: "✓", progress: "●", blocked: "✕", ready: "○", waiting: "" };
-const AREA_COLORS = ["blue", "peach", "teal", "yellow", "pink", "green", "mauve", "red", "sapphire", "flamingo", "lavender", "maroon", "sky", "rosewater"];
+// Green, blue, yellow and red mean status, so areas use the other accents.
+const AREA_COLORS = ["teal", "mauve", "pink", "sky", "flamingo", "lavender", "maroon", "sapphire", "rosewater", "peach"];
 
 let projects = [];          // summaries from /api/projects
 let route = { project: null, step: null };
@@ -59,7 +60,7 @@ const dur = ms => {
   return d ? `${d}d ${h % 24}h` : h ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${m}m`;
 };
 const ts = iso => { const t = Date.parse(iso); return isNaN(t) ? NaN : t; };
-const ago = iso => isNaN(ts(iso)) ? "–" : dur(Date.now() - ts(iso)) + " ago";
+const ago = iso => isNaN(ts(iso)) ? "–" : Date.now() - ts(iso) < 60000 ? "just now" : dur(Date.now() - ts(iso)) + " ago";
 const clock = iso => {
   const d = new Date(ts(iso));
   if (isNaN(d)) return "";
@@ -70,7 +71,7 @@ const clock = iso => {
 const entry = id => (data && data.progress[id]) || null;
 const runtime = e => e && e.started ? dur((e.finished ? ts(e.finished) : Date.now()) - ts(e.started)) : "–";
 // In-progress steps: time since start when the format records it, else time since the last update.
-const since = e => e && e.started ? runtime(e) : e && e.updated ? "updated " + ago(e.updated) : "in progress";
+const since = e => e && e.started ? runtime(e) : e && e.updated ? ago(e.updated) : "in progress";
 
 // ---------------------------------------------------------------- network --
 async function getJSON(url) {
@@ -102,15 +103,25 @@ async function pollProject() {
     hubOk = Date.now(); hubErr = null; lastFetch = Date.now();
     if (route.project !== id) return;
     setData(d);
-  } catch (e) { hubErr = e.message || "unreachable"; renderChrome(); }
+  } catch (e) {
+    if (String(e.message) === "not found") { renderProject(); return; }
+    hubErr = e.message || "unreachable"; renderChrome();
+  }
 }
 
+let warnedStep = null;
 function setData(d) {
   const sig = JSON.stringify([d.mtime, d.counts, d.progress, d.log && d.log.length, d.error, d.repo, d.problems, d.nodes && d.nodes.length]);
   const changed = !data || data.id !== d.id || sig !== data._sig;
   d._sig = sig;
   data = d;
   byId = Object.fromEntries((d.nodes || []).map(n => [n.id, n]));
+  if (route.step && d.nodes && !byId[route.step] && warnedStep !== route.step) {
+    warnedStep = route.step;
+    toast(`No step “${route.step}” in ${d.title}`, true);
+    history.replaceState(null, "", "#/" + encodeURIComponent(d.id));
+    route.step = null;
+  }
   if (changed) renderProject(); else renderChrome();
 }
 
@@ -127,6 +138,7 @@ function go(project, step = null, replace = false) {
 function applyRoute() {
   const r = STATIC ? { project: STATIC.id, step: parseHash().step } : parseHash();
   const switched = r.project !== route.project;
+  const stepChanged = r.step !== route.step;
   route = r;
   closeMenus();
   hideTip(); hovered = null;
@@ -136,15 +148,22 @@ function applyRoute() {
       if (!data || data.id !== route.project) { data = null; byId = {}; graph = null; }
       renderProject(); pollProject();
     } else { data = null; byId = {}; graph = null; renderHome(); pollProjects(); }
-  } else if (route.project) renderProject(true);
+  } else if (route.project) {
+    renderProject(true);
+    // A step chosen from the address bar or a link: bring it into view.
+    if (stepChanged && !internalNav && route.step && graph) focusNode(route.step);
+  }
 }
 addEventListener("hashchange", applyRoute);
 addEventListener("popstate", applyRoute);
 
+let internalNav = false;
 function selectStep(id, center = false) {
   if (!route.project) return;
   if (id && !byId[id]) return;
+  internalNav = true;
   go(route.project, id, true);
+  internalNav = false;
   if (center && id && viewOf(route.project) === "graph") focusNode(id);
 }
 
@@ -160,7 +179,7 @@ function renderChrome() {
   const home = !route.project;
   $("app").classList.toggle("home", home);
   $("toolbar").hidden = home || !data || !data.nodes;
-  if ($("toolbar").hidden) $("chiprow").hidden = true;
+  $("legend").hidden = home || !data || !data.nodes || !prefs.legend || viewOf(route.project) !== "graph";
   // switcher label
   const cur = home ? null : (data && data.id === route.project ? data : projects.find(p => p.id === route.project));
   $("switchName").textContent = home ? "All projects" : (cur ? cur.title : route.project);
@@ -180,21 +199,21 @@ function renderChrome() {
       ${c.blocked ? `<div class="stat blocked"><b>${c.blocked}</b><span>blocked</span></div>` : ""}
       <div class="stat ready"><b>${c.ready}</b><span>ready</span></div>
       <div class="stat"><b>${c.waiting}</b><span>waiting</span></div>
-      ${!home || c.unpushed ? `<div class="stat unpushed" title="Done, but the recorded commit is not on the upstream branch yet"><b>${c.unpushed}</b><span>not pushed</span></div>` : ""}
-      ${c.retries ? `<div class="stat"><b>${c.retries}</b><span>retries</span></div>` : ""}
-      ${home ? `<div class="stat"><b>${projects.length}</b><span>projects</span></div>` : ""}`;
+      ${c.unpushed ? `<div class="stat unpushed" title="Done, but the recorded commit is not on the upstream branch yet"><b>${c.unpushed}</b><span>not pushed</span></div>` : ""}
+      ${c.retries ? `<div class="stat"><b>${c.retries}</b><span>retries</span></div>` : ""}`;
   } else $("stats").innerHTML = "";
   // facts
   if (!home && data && data.nodes) {
     const ld = a => a ? a.slice(0, 3).map(x => x.toFixed(2)).join(" ") : "–";
     const r = data.repo;
     const cores = a => a && a[3] ? `${a[3]} cores` : "";
+    // A status bar, like an editor's: machine first, then git.
     $("facts").innerHTML = `
-      <div class="fact" title="Load average on ${esc(data.machine || data.host)} (${cores(data.load)})"><b>${ld(data.load)}</b><span>load · ${esc(data.machine || data.host)}</span></div>
-      ${data.box_host ? `<div class="fact opt" title="${esc(data.box_host)} ${cores(data.box)}"><b>${data.box ? ld(data.box) : "offline"}</b><span>load · build box</span></div>` : ""}
-      ${r ? `<div class="fact" title="${esc(r.branch || "")}: HEAD / ${esc(r.upstream || "no upstream")} (local tracking refs, no fetch)"><b>${esc(r.head || "?")} / ${esc(r.origin || "?")}</b><span>head / ${esc((r.upstream || "origin").split("/")[0])} · ${esc(r.branch || "HEAD")}</span></div>
-      <div class="fact ${r.dirty ? "warn" : ""}"><b>${r.ahead ?? "–"}${r.dirty ? " +dirty" : ""}</b><span>commits ahead</span></div>
-      <div class="fact opt"><b>${r.worktrees}</b><span>worktrees</span></div>` : ""}`;
+      <span class="fact" title="Load average on ${esc(data.machine || data.host)} (${cores(data.load)})"><span>${esc(data.machine || data.host)}</span><b>${ld(data.load)}</b></span>
+      ${data.box_host ? `<span class="fact" title="Build box ${esc(data.box_host)} ${cores(data.box)}"><span>box</span><b>${data.box ? ld(data.box) : "offline"}</b></span>` : ""}
+      ${r ? `<span class="fact" title="HEAD / ${esc(r.upstream || "no upstream")} (local tracking refs, no fetch)"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="3.5" r="1.8"/><circle cx="4" cy="12.5" r="1.8"/><circle cx="12" cy="6" r="1.8"/><path d="M4 5.3v5.4M12 7.8c0 2.5-3 2.7-6.2 4"/></g></svg><span class="br">${esc(r.branch || "HEAD")}</span><b>${esc(r.head || "?")}</b><span>/ ${esc(r.origin || "?")}</span></span>
+      <span class="fact ${r.dirty ? "warn" : ""}" title="Commits ahead of ${esc(r.upstream || "upstream")}"><b>↑${r.ahead ?? "–"}</b>${r.dirty ? "<span>dirty</span>" : ""}</span>
+      <span class="fact" title="Git worktrees"><b>${r.worktrees}</b><span>worktrees</span></span>` : ""}`;
   } else $("facts").innerHTML = "";
   tickLive();
   // banner
@@ -249,9 +268,10 @@ $("menu").onkeydown = e => {
 };
 function closeMenus() {
   $("menu").hidden = true; $("switchBtn").setAttribute("aria-expanded", "false");
+  $("areaMenu").hidden = true; $("areaBtn").setAttribute("aria-expanded", "false");
   $("prefs").hidden = true; $("prefsBtn").setAttribute("aria-expanded", "false");
 }
-document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, #switchBtn, #prefsBtn")) closeMenus(); });
+document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, #switchBtn, #prefsBtn, #areaMenu, #areaBtn")) closeMenus(); });
 
 // ------------------------------------------------------------------ home ----
 function renderHome() {
@@ -276,12 +296,18 @@ function renderHome() {
       ${p.problems && p.problems.length ? `<div class="errbox">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : ""}
       <div><h3>${p.active.length ? "In progress" : "Ready next"}</h3><ul>${active || ready || '<li class="empty">Nothing ready</li>'}</ul></div>
       ${p.active.length && ready ? `<div><h3>Ready next</h3><ul>${ready}</ul></div>` : ""}
+      ${p.critical && p.critical.total ? `<div class="crit-line"><span class="muted small">${p.critical.computed ? "Longest chain" : "Critical path"}</span>${stackBar({ done: p.critical.done, total: p.critical.total, progress: 0, blocked: 0, ready: 0 }, "stack thin")}<span class="small"><b>${p.critical.done}</b>/${p.critical.total}</span></div>` : ""}
+      ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 80))}</div>` : ""}
       <div class="foot">${r ? `<span><b>${esc(r.head || "?")}</b> ${esc(r.branch || "")}</span><span><b>${r.ahead ?? "–"}</b> ahead${r.dirty ? " · dirty" : ""}</span>` : ""}${p.load ? `<span>load <b>${p.load[0].toFixed(2)}</b></span>` : ""}${p.box ? `<span>box <b>${p.box[0].toFixed(2)}</b></span>` : ""}</div>
     </article>`;
   }).join("");
   const feed = projects.flatMap(p => (p.log || []).map(e => ({ ...e, p }))).sort((a, b) => ts(b.t) - ts(a.t)).slice(0, 60);
-  $("feed").innerHTML = `<div class="sechead"><h3>Recent activity</h3></div>` + (feed.map(e => `
-    <div class="logrow"><span class="tm">${esc(clock(e.t))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`).join("") || '<div class="empty">No activity yet.</div>');
+  let day = "";
+  $("feed").innerHTML = `<div class="sechead"><h3>Recent activity</h3></div>` + (feed.map(e => {
+    const d = new Date(ts(e.t)), label = isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? "Today" : d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+    const head = label !== day ? `<div class="dayhead">${esc(day = label)}</div>` : "";
+    return head + `<div class="logrow"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
+  }).join("") || '<div class="empty">No activity yet.</div>');
 }
 $("main").addEventListener("click", e => {
   if (route.project) return;
@@ -297,6 +323,11 @@ const kindBadge = k => k ? `<span class="kind ${esc(k)}">${esc(k === "undo" ? "r
 function renderProject(routeOnly = false) {
   renderChrome();
   const main = $("main");
+  if (projects.length && !projects.some(p => p.id === route.project)) {
+    main.innerHTML = `<div class="state-msg"><div class="state-card"><h2>No project named “${esc(route.project)}”</h2>
+      <p class="muted">It may have been renamed or removed from hub.json.</p><button class="btn" onclick="location.hash='#/'">See all projects</button></div></div>`;
+    return;
+  }
   if (!data || data.id !== route.project) {
     main.innerHTML = `<div class="loading" aria-busy="true" aria-label="Loading ${esc(route.project)}"><div class="skel-graph">${Array.from({ length: 18 }, (_, i) => `<i style="animation-delay:${(i % 6) * 80}ms"></i>`).join("")}</div><div class="skel-side"><i></i><i></i><i></i><i></i></div></div>`;
     return;
@@ -339,8 +370,12 @@ function renderToolbar() {
     : `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="2" width="6" height="6" rx="1.5"/><rect x="4" y="16" width="6" height="6" rx="1.5"/><rect x="14" y="16" width="6" height="6" rx="1.5"/><path d="M12 8v4m0 0c0 2-5 2-5 4m5-4c0 2 5 2 5 4"/></g></svg>`;
   $("dirBtn").title = (lr ? "Left to right" : "Top to bottom") + " · switch direction (d)";
   const off = offAreas(), keys = Object.keys(data.areas);
-  $("chiprow").hidden = keys.length < 2;
-  $("areas").innerHTML = keys.map((a, i) => `<button class="chip" data-area="${esc(a)}" aria-pressed="${!off.has(a)}" title="${esc(data.areas[a])}"><i class="sw" style="background:${areaColor(a)}"></i>${esc(a === data.areas[a] || !a ? data.areas[a] : a + " · " + data.areas[a])} <span class="n">${data.nodes.filter(n => n.area === a).length}</span></button>`).join("");
+  $("areaPick").hidden = keys.length < 2;
+  const shown = keys.length - [...off].filter(a => keys.includes(a)).length;
+  $("areaLbl").innerHTML = shown === keys.length ? "Areas" : `Areas <span class="n">${shown}/${keys.length}</span>`;
+  $("areaBtn").setAttribute("aria-pressed", shown !== keys.length);
+  $("areaMenu").innerHTML = `<div class="amhead"><b>Areas</b><button class="btn ghost small" data-area-all>Show all</button></div>` +
+    keys.map(a => `<label class="aitem"><input type="checkbox" data-area="${esc(a)}"${off.has(a) ? "" : " checked"}><i class="sw" style="background:${areaColor(a)}"></i><span class="t">${esc(a === data.areas[a] || !a ? data.areas[a] : a + " · " + data.areas[a])}</span><span class="n">${data.nodes.filter(n => n.area === a).length}</span><button class="only" data-area-only="${esc(a)}" title="Show only this area">only</button></label>`).join("");
 }
 const areaColor = a => `var(--${AREA_COLORS[Math.max(0, Object.keys(data.areas).indexOf(a)) % AREA_COLORS.length]})`;
 
@@ -361,7 +396,7 @@ function visibility() {
   const out = {};
   for (const n of data.nodes) {
     const match = !!q && matches(n, q);
-    const related = !f || n.id === s || f.up.has(n.id) || f.down.has(n.id);
+    const related = !f || viewOf(data.id) !== "graph" || n.id === s || f.up.has(n.id) || f.down.has(n.id);
     // Every active filter dims what it excludes, as both original dashboards did.
     const dim = !related || off.has(n.area) || (filter && n.status !== filter) || (critOn && !crit.has(n.id)) || (q && !match);
     out[n.id] = { dim, match };
@@ -383,7 +418,13 @@ function renderStage(routeOnly) {
   }
   const q = query.toLowerCase();
   const n = q ? data.nodes.filter(x => matches(x, q)).length : 0;
-  $("qCount").hidden = !q; $("qKbd").hidden = !!q; $("qCount").textContent = q ? `${n} found` : "";
+  $("qCount").hidden = !q; $("qClear").hidden = !q; $("qKbd").hidden = !!q; $("qCount").textContent = q ? `${n}` : "";
+  $("qCount").title = q ? `${n} step${n === 1 ? "" : "s"} match` : "";
+  let nm = $("stage").querySelector(".nomatch");
+  if (q && !n) {
+    if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
+    nm.innerHTML = `No step matches “${esc(query)}”. <button class="btn ghost small" data-clear-q>Clear search</button>`;
+  } else nm?.remove();
 }
 
 function layoutSig() {
@@ -396,20 +437,20 @@ const measure = (() => {
   return (text, size = 11, weight = 400) => { ctx.font = `${weight} ${size}px ${sans}`; return ctx.measureText(text).width; };
 })();
 const monoW = (s, size) => s.length * size * 0.6;
-function wrap2(text, width) {
-  const words = text.split(/\s+/);
+function wrap2(text, width, size = 11) {
+  const words = text.split(/\s+/), m = t => measure(t, size);
   let a = "", i = 0;
-  for (; i < words.length; i++) { const t = (a ? a + " " : "") + words[i]; if (measure(t) > width && a) break; a = t; }
+  for (; i < words.length; i++) { const t = (a ? a + " " : "") + words[i]; if (m(t) > width && a) break; a = t; }
   let b = words.slice(i).join(" ");
-  if (measure(a) > width) { while (a.length > 1 && measure(a + "…") > width) a = a.slice(0, -1); a += "…"; }
-  if (b && measure(b) > width) { while (b.length > 1 && measure(b + "…") > width) b = b.slice(0, -1); b += "…"; }
+  if (m(a) > width) { while (a.length > 1 && m(a + "…") > width) a = a.slice(0, -1); a += "…"; }
+  if (b && m(b) > width) { while (b.length > 1 && m(b + "…") > width) b = b.slice(0, -1); b += "…"; }
   return [a, b];
 }
 
 function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
-  const W = comfy ? 224 : 204, H = comfy ? 60 : 54;
+  const W = comfy ? 240 : 220, H = comfy ? 62 : 58;
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 64 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -430,20 +471,38 @@ function buildGraph(sig) {
       l.forEach((n, i) => r[n.id] = i);
     }
   }
-  const maxRows = Math.max(1, ...levels.map(l => l.length));
-  const pos = {};
-  const LABEL_PAD = 34;
+  // Wide levels wrap into bands (rows of 10 top to bottom, columns of 14 left to right),
+  // so "fit" stays readable on plans with many independent steps.
+  const SUB = lr ? 20 : 16, TOP = 44, LEFT = 44;
+  // Pick the band size whose overall shape best matches the stage, so "fit" stays as large as possible.
+  const longest = Math.max(1, ...levels.map(l => l.length));
+  const sr = $("stage").getBoundingClientRect();
+  const shape = wrap => {
+    const along = levels.reduce((t, l) => t + (l.length ? Math.ceil(l.length / wrap) * ((lr ? W : H) + SUB) - SUB + (lr ? GAPX : GAPY) : 0), 24);
+    const side = (lr ? TOP : LEFT) + Math.min(wrap, longest) * (lr ? H + GAPY : W + GAPX) + 24;
+    return lr ? [along, side] : [side, along];
+  };
+  let WRAP = longest, best = 0;
+  for (let w = 3; w <= longest; w++) {
+    const [ww, hh] = shape(w), k = Math.min((sr.width || 1200) / ww, (sr.height || 800) / hh);
+    if (k > best + 1e-3) { best = k; WRAP = w; }
+  }
+  const across = Math.max(1, Math.min(WRAP, longest));
+  const pos = {}, starts = [];
+  let cursor = lr ? 24 : 24;
   levels.forEach((l, li) => {
-    if (lr) {
-      const off = (maxRows - l.length) * (H + GAPY) / 2;
-      l.forEach((n, i) => pos[n.id] = { x: 24 + li * (W + GAPX), y: LABEL_PAD + 10 + off + i * (H + GAPY) });
-    } else {
-      const off = (maxRows - l.length) * (W + GAPX) / 2;
-      l.forEach((n, i) => pos[n.id] = { x: LABEL_PAD + 30 + off + i * (W + GAPX), y: 24 + li * (H + GAPY) });
-    }
+    starts[li] = cursor;
+    if (!l.length) return;
+    const bands = [];
+    for (let i = 0; i < l.length; i += WRAP) bands.push(l.slice(i, i + WRAP));
+    bands.forEach((band, bi) => band.forEach((n, i) => {
+      if (lr) pos[n.id] = { x: cursor + bi * (W + SUB), y: TOP + i * (H + GAPY) };
+      else pos[n.id] = { x: LEFT + (across - band.length) * (W + GAPX) / 2 + i * (W + GAPX), y: cursor + bi * (H + SUB) };
+    }));
+    cursor += bands.length * ((lr ? W : H) + SUB) - SUB + (lr ? GAPX : GAPY);
   });
-  const worldW = lr ? 48 + levels.length * (W + GAPX) : LABEL_PAD + 60 + maxRows * (W + GAPX);
-  const worldH = lr ? LABEL_PAD + 40 + maxRows * (H + GAPY) : 48 + levels.length * (H + GAPY);
+  const worldW = lr ? cursor : LEFT + across * (W + GAPX) + 24;
+  const worldH = lr ? TOP + across * (H + GAPY) + 24 : cursor;
 
   stage.innerHTML = `<div class="dotgrid"></div>`;
   const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph` }, stage);
@@ -451,8 +510,8 @@ function buildGraph(sig) {
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
-    if (lr) svgEl("text", { class: "lvl", x: 24 + li * (W + GAPX), y: 24 }, gL).textContent = "LEVEL " + li;
-    else svgEl("text", { class: "lvl", x: 8, y: 24 + li * (H + GAPY) + H / 2 + 4 }, gL).textContent = "L" + li;
+    if (lr) svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL).textContent = "L" + li;
+    else svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL).textContent = "L" + li;
   });
   const edges = [];
   for (const n of data.nodes) for (const d of n.deps) {
@@ -469,21 +528,25 @@ function buildGraph(sig) {
     svgEl("rect", { class: "pulse", width: W, height: H, rx: 7 }, g);
     svgEl("rect", { class: "box", width: W, height: H, rx: 7 }, g);
     svgEl("rect", { x: 4, y: 6, width: 3, height: H - 12, rx: 1.5, fill: areaColor(n.area) }, g);
-    let cx = 13;
-    const ord = svgEl("text", { class: "ord", x: cx, y: 17 }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10) + 5;
-    const idt = svgEl("text", { class: "id", x: cx, y: 17 }, g);
-    const st = svgEl("text", { class: "st", x: W - 8, y: 17, "text-anchor": "end" }, g);
+    let cx = 14;
+    const ord = svgEl("text", { class: "ord", x: cx, y: 19 }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5) + 6;
+    const idt = svgEl("text", { class: "id", x: cx, y: 19 }, g);
+    const st = svgEl("text", { class: "st", x: W - 9, y: 19, "text-anchor": "end" }, g);
     // fit the id, size and hard tags, leaving room for a status glyph
-    const room = W - 8 - 16 - cx;
+    const room = W - 9 - 18 - cx;
     let id = n.id;
-    if (monoW(id, 11.5) > room) { while (id.length > 3 && monoW(id + "…", 11.5) > room) id = id.slice(0, -1); id += "…"; }
-    idt.textContent = id; cx += monoW(id, 11.5) + 6;
-    if (prefs.sizes && n.size && cx + monoW(n.size, 9.5) < W - 24) { svgEl("text", { class: "tag", x: cx, y: 17 }, g).textContent = n.size; cx += monoW(n.size, 9.5) + 5; }
-    if (n.hard && cx + 24 < W - 24) { svgEl("text", { class: "hard", x: cx, y: 17 }, g).textContent = "hard"; cx += 26; }
-    const [l1, l2] = wrap2(n.title, W - 22);
-    svgEl("text", { x: 13, y: comfy ? 35 : 33 }, g).textContent = l1;
-    if (l2) svgEl("text", { x: 13, y: comfy ? 50 : 46 }, g).textContent = l2;
-    els[n.id] = { g, st, statusRoom: W - 8 - cx };
+    if (monoW(id, 13) > room) { while (id.length > 3 && monoW(id + "…", 13) > room) id = id.slice(0, -1); id += "…"; }
+    idt.textContent = id; cx += monoW(id, 13) + 6;
+    if (prefs.sizes && n.size && cx + monoW(n.size, 10) < W - 26) { svgEl("text", { class: "tag", x: cx, y: 19 }, g).textContent = n.size; cx += monoW(n.size, 10) + 6; }
+    if (n.hard && cx + 26 < W - 26) { svgEl("text", { class: "hard", x: cx, y: 19 }, g).textContent = "hard"; cx += 28; }
+    const [l1, l2] = wrap2(n.title, W - 24, 12);
+    svgEl("text", { class: "tt", x: 14, y: comfy ? 38 : 36 }, g).textContent = l1;
+    if (l2) svgEl("text", { class: "tt", x: 14, y: comfy ? 53 : 50 }, g).textContent = l2;
+    // Far zoom shows only a large id, centred.
+    let big = n.id;
+    while (big.length > 3 && monoW(big, 26) > W - 16) big = big.slice(0, -2) + "…";
+    svgEl("text", { class: "farid", x: W / 2, y: H / 2 + 8, "text-anchor": "middle" }, g).textContent = big;
+    els[n.id] = { g, st, statusRoom: W - 9 - cx };
   }
   graph = { sig, svg, vp, edges, els, pos, W, H, worldW, worldH, lr };
   bindGraph(svg);
@@ -519,23 +582,22 @@ function updateGraph() {
 }
 
 function renderLegend() {
-  const stage = $("stage");
-  let lg = stage.querySelector(".legend");
-  if (!prefs.legend) { lg?.remove(); return; }
-  if (!lg) { lg = document.createElement("div"); lg.className = "legend"; stage.appendChild(lg); }
+  const lg = $("legend");
+  lg.hidden = !prefs.legend || !route.project || viewOf(route.project) !== "graph";
+  if (lg.hidden) return;
   const sw = (fill, stroke, dash) => `<i class="sw" style="background:color-mix(in srgb, var(--${fill}) 22%, var(--base));border-color:var(--${stroke});${dash ? "border-style:dashed" : ""}"></i>`;
   lg.innerHTML = `<span class="k">${sw("done", "done")}done</span><span class="k">${sw("done", "done", 1)}not pushed</span>
     <span class="k">${sw("progress", "progress")}in progress</span><span class="k">${sw("blocked", "blocked")}blocked</span>
     <span class="k">${sw("ready", "ready")}ready</span><span class="k">${sw("s0", "s1")}waiting</span>
     <span class="k"><i class="ln" style="border-color:var(--needs)"></i>needs</span><span class="k"><i class="ln" style="border-color:var(--unblocks)"></i>unblocks</span>
-    ${critOn ? `<span class="k"><i class="ln" style="border-color:var(--crit)"></i>critical</span>` : ""}
-    <button title="Hide legend (it can come back in view settings)" aria-label="Hide legend" data-hide-legend>×</button>`;
+    ${critOn ? `<span class="k"><i class="ln" style="border-color:var(--crit)"></i>critical</span>` : ""}`;
 }
 
 // camera
 function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
+  graph.svg.classList.toggle("far", c.k < 0.5);
   $("zPct").textContent = Math.round(c.k * 100) + "%";
   const dg = $("stage").querySelector(".dotgrid");
   if (dg) { dg.style.backgroundSize = `${22 * c.k}px ${22 * c.k}px`; dg.style.backgroundPosition = `${c.tx}px ${c.ty}px`; }
@@ -548,13 +610,9 @@ function fitAll() {
 }
 function initialView() {
   const r = $("stage").getBoundingClientRect();
-  if (graph.lr) {
-    const k = Math.min(1, Math.max(0.5, (r.height - 20) / graph.worldH));
-    setCam(k, 8, Math.max(8, (r.height - graph.worldH * k) / 2));
-  } else {
-    const k = Math.min(1, Math.max(0.5, (r.width - 20) / graph.worldW));
-    setCam(k, (r.width - graph.worldW * k) / 2, 8);
-  }
+  // Open at full size: readable first, overview on demand (Fit).
+  if (graph.lr) setCam(1, 8, 8);
+  else setCam(1, graph.worldW < r.width ? (r.width - graph.worldW) / 2 : 8, 8);
   const s = sel();
   const active = data.nodes.filter(n => n.status === "progress").sort((a, b) => a.order - b.order)[0];
   if (s) focusNode(s);
@@ -583,7 +641,7 @@ function zoomAt(f, mx, my) {
 function focusNode(id) {
   if (!graph || !graph.pos[id]) return;
   const r = $("stage").getBoundingClientRect(), c = cams.get(data.id) || { k: 1 };
-  const k = Math.max(c.k, 0.85), p = graph.pos[id];
+  const k = Math.max(c.k, 1), p = graph.pos[id];
   setCam(k, r.width / 2 - (p.x + graph.W / 2) * k, r.height / 2 - (p.y + graph.H / 2) * k);
 }
 
@@ -707,15 +765,15 @@ function renderTable() {
     const x = col[2](a), y = col[2](b);
     return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * tableSort.dir || a.order - b.order;
   });
-  const head = COLS.map(c => `<th data-sort="${c[0]}" aria-sort="${tableSort.key === c[0] ? (tableSort.dir > 0 ? "ascending" : "descending") : "none"}">${c[1]}${tableSort.key === c[0] ? ` <span class="ar">${tableSort.dir > 0 ? "↑" : "↓"}</span>` : ""}</th>`).join("");
+  const head = COLS.map(c => `<th class="c-${c[0]}" data-sort="${c[0]}" aria-sort="${tableSort.key === c[0] ? (tableSort.dir > 0 ? "ascending" : "descending") : "none"}">${c[1]}${tableSort.key === c[0] ? ` <span class="ar">${tableSort.dir > 0 ? "↑" : "↓"}</span>` : ""}</th>`).join("");
   const body = rows.map(n => {
     const e = entry(n.id) || {};
     return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}${vis[n.id].dim ? " dim" : ""}" tabindex="0">
-      <td class="muted">${n.order}</td><td class="id">${esc(n.id)}</td><td><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
-      <td>${n.level}</td><td>${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
-      <td><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
-      <td>${esc(n.title)}</td><td class="wrap">${esc(n.check || n.desc)}</td><td class="mono small">${esc(n.deps.join(", ") || "–")}</td>
-      <td class="muted small" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small">${esc(e.who || "")}</td></tr>`;
+      <td class="muted c-order">${n.order}</td><td class="id c-id">${esc(n.id)}</td><td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
+      <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
+      <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
+      <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
+      <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
   }).join("");
   $("stage").innerHTML = `<div class="list"><table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   keepScroll(top, s);
@@ -726,7 +784,6 @@ $("main").addEventListener("click", e => {
   if (th) { tableSort = { key: th.dataset.sort, dir: tableSort.key === th.dataset.sort ? -tableSort.dir : 1 }; renderTable(); $("stage").querySelector(".list").scrollTop = 0; return; }
   const row = e.target.closest(".orow[data-id], tr[data-id]");
   if (row) return selectStep(row.dataset.id === sel() ? null : row.dataset.id);
-  if (e.target.closest("[data-hide-legend]")) { prefs.legend = false; savePrefs(); return renderLegend(); }
 });
 $("main").addEventListener("keydown", e => {
   const row = e.target.closest(".orow[data-id], tr[data-id]");
@@ -734,15 +791,16 @@ $("main").addEventListener("keydown", e => {
 });
 
 // ----------------------------------------------------------------- panel ----
-const linkRow = id => {
+const linkRow = (id, plain) => {
   const n = byId[id], e = entry(id);
-  const right = n.status === "progress" ? since(e) : LABEL[n.status] + (n.unpushed ? ", not pushed" : "");
+  const right = n.status === "progress" ? since(e) : plain ? "" : LABEL[n.status] + (n.unpushed ? ", not pushed" : "");
   return `<li data-goto="${esc(id)}" tabindex="0"><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="s">${right}</span></li>`;
 };
-const linkList = (ids, empty) => `<ul class="links">${ids.map(linkRow).join("") || `<li class="none">${empty}</li>`}</ul>`;
+const linkList = (ids, empty, plain = false) => `<ul class="links">${ids.map(id => linkRow(id, plain)).join("") || `<li class="none">${empty}</li>`}</ul>`;
 
 function renderPanel() {
   const p = $("panel"), keep = p.scrollTop, s = sel();
+  $("app").classList.toggle("sheet", !!s);
   const focused = document.activeElement && document.activeElement.id === "noteIn";
   const draft = $("noteIn") ? $("noteIn").value : "";
   p.innerHTML = s ? detail(byId[s]) : overview();
@@ -758,7 +816,7 @@ function overview() {
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
     ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
     <h3 ${prog.length || blocked.length ? "" : 'style="margin-top:2px"'}>Ready to start · ${ready.length}</h3>
-    ${linkList(ready.slice(0, 12).map(n => n.id), "Nothing is ready: every open step waits on a prerequisite.")}
+    ${linkList(ready.slice(0, 12).map(n => n.id), "Nothing is ready: every open step waits on a prerequisite.", true)}
     ${ready.length > 12 ? `<button class="btn ghost small" data-filter-ready style="margin-top:4px">Show all ${ready.length} ready steps</button>` : ""}
     <p class="muted small">Ready means every prerequisite is recorded as done. It is not a priority order.</p>
     <h3>${data.critical_computed ? "Longest chain" : "Critical path"} · ${data.critical.length} steps</h3>
@@ -786,15 +844,15 @@ function detail(n) {
   const check = n.check ? `<h3>Done when</h3><div class="check">${esc(n.check)}</div>` : "";
   const desc = n.desc ? `<h3>${n.check ? "Notes" : "Description"}</h3><div class="check">${esc(n.desc)}</div>` : "";
   const noCheck = !n.check && !n.desc ? `<h3>Done when</h3><div class="check empty">No completion check written for this step.</div>` : "";
-  return `<div class="dhead"><span class="idl">${esc(n.id)}</span><button class="iconbtn x" data-close aria-label="Close details" title="Close (Esc)">✕</button></div>
+  return `<button class="grab" data-close aria-label="Close details"></button><div class="dhead"><span class="idl">${esc(n.id)}</span><button class="iconbtn x" data-close aria-label="Close details" title="Close (Esc)">✕</button></div>
     <div class="dtitle">${esc(n.title)}</div>
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
+    ${actions(n, e)}
     ${meta}
     ${e.note && e.note !== n.check ? `<div class="note">${esc(e.note)}</div>` : ""}${commit}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
     ${conflict}${unmet}${check}${desc}${noCheck}
-    ${actions(n, e)}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
     <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>`;
@@ -865,6 +923,7 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-filter-ready]")) { filter = "ready"; return renderProject(); }
   if (e.target.closest("[data-local]")) { toggleStatic(sel()); return; }
   if (e.target.closest("[data-showall]")) return selectStep(null);
+  if (e.target.closest("[data-clear-q]")) { $("q").value = query = ""; return renderStage(); }
 });
 $("main").addEventListener("keydown", e => {
   if (e.target.id === "noteIn" && e.key === "Enter") { e.preventDefault(); if (document.querySelector('[data-act="log"]')) act("log"); }
@@ -927,21 +986,34 @@ $("toolbar").addEventListener("click", e => {
   const f = e.target.closest("[data-filter]");
   if (f) { filter = f.dataset.filter || null; return renderProject(); }
 });
-$("chiprow").addEventListener("click", e => {
+$("areaBtn").onclick = e => {
+  e.stopPropagation();
+  const open = $("areaMenu").hidden;
+  closeMenus();
+  $("areaMenu").hidden = !open; $("areaBtn").setAttribute("aria-expanded", open);
+};
+$("areaMenu").addEventListener("click", e => {
+  e.stopPropagation();
   if (!data || !data.nodes) return;
-  const a = e.target.closest("[data-area]");
-  if (a) {
-    const off = offAreas(), k = a.dataset.area;
-    if (e.altKey || e.metaKey) { const keys = Object.keys(data.areas); const only = off.size === keys.length - 1 && !off.has(k); off.clear(); if (!only) keys.forEach(x => x !== k && off.add(x)); }
-    else off.has(k) ? off.delete(k) : off.add(k);
-    return renderProject();
-  }
+  const off = offAreas(), keys = Object.keys(data.areas);
+  if (e.target.closest("[data-area-all]")) { off.clear(); return renderProject(); }
+  const only = e.target.closest("[data-area-only]");
+  if (only) { e.preventDefault(); off.clear(); keys.forEach(k => k !== only.dataset.areaOnly && off.add(k)); return renderProject(); }
+});
+$("areaMenu").addEventListener("change", e => {
+  const box = e.target.closest("input[data-area]");
+  if (!box || !data) return;
+  const off = offAreas();
+  box.checked ? off.delete(box.dataset.area) : off.add(box.dataset.area);
+  renderProject();
 });
 $("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical); };
 $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "direct" ? "all" : "direct"; savePrefs(); renderProject(); };
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
-$("zPct").onclick = () => fitAll();
+$("zFit").onclick = () => fitAll();
+$("moreBtn").onclick = () => { const o = !$("toolbar").classList.contains("open"); $("toolbar").classList.toggle("open", o); $("moreBtn").setAttribute("aria-expanded", o); };
+$("qClear").onclick = () => { $("q").value = query = ""; renderStage(); $("q").focus(); };
 $("dirBtn").onclick = () => { prefs.dir[data.id] = dirOf(data.id) === "LR" ? "TB" : "LR"; savePrefs(); graph = null; renderProject(); };
 
 function bindResizer() {
@@ -996,7 +1068,7 @@ function rerenderGraph() { graph = null; if (route.project && data && data.nodes
 addEventListener("keydown", e => {
   const typing = e.target.closest && e.target.closest("input, select, textarea, dialog");
   if (e.key === "Escape") {
-    if (!$("menu").hidden || !$("prefs").hidden) return closeMenus();
+    if (!$("menu").hidden || !$("prefs").hidden || !$("areaMenu").hidden) return closeMenus();
     if (typing) return;
     if (sel()) return selectStep(null);
     if (filter || critOn) { filter = null; critOn = false; return renderProject(); }
@@ -1053,7 +1125,3 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !S
 // keep runtimes and "ago" labels moving
 setInterval(() => { if (route.project && data && data.nodes && data.counts.progress) renderPanel(); if (!route.project) renderHome(); }, 30000);
 addEventListener("resize", () => { if (graph && !cams.has(data.id)) initialView(); });
-// A plain mouse wheel scrolls the area chips sideways.
-$("areas").addEventListener("wheel", e => {
-  if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && $("areas").scrollWidth > $("areas").clientWidth) { e.preventDefault(); $("areas").scrollLeft += e.deltaY; }
-}, { passive: false });

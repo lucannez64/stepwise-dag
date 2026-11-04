@@ -389,8 +389,12 @@ class Project:
                   for n in v["nodes"] if n["status"] in ("progress", "blocked")]
         ready = [n for n in v["nodes"] if n["status"] == "ready"]
         ready.sort(key=lambda n: n["order"])
+        crit = v.get("critical") or []
+        status = {n["id"]: n["status"] for n in v["nodes"]}
         return {k: v.get(k) for k in ("id", "title", "format", "host", "machine", "counts", "repo",
                                       "load", "box", "box_host", "error", "age", "problems")} | {
+            "critical": {"total": len(crit), "done": sum(status.get(c) == "done" for c in crit),
+                         "computed": bool(v.get("critical_computed"))},
             "active": active,
             "ready": [{"id": n["id"], "title": n["title"]} for n in ready[:6]],
             "log": v["log"][-8:],
