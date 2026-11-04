@@ -693,7 +693,7 @@ svg.hide-ex .node.ex, svg.hide-ex .edge.ex { display: none; }
 .card .slot { display: none; }
 
 /* far zoom: active and blocked work stays prominent */
-svg.far .node.progress .box, svg.far .node.blocked .box { stroke-width: 6; }
+svg.far .node.progress .box, svg.far .node.blocked .box, svg.mid .node.blocked .box { stroke-width: 6; }
 svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: 34px; }
 @media (max-width: 900px) {
   .pop { left: 8px; right: 8px; width: auto; }
@@ -784,3 +784,27 @@ table.t tbody tr { height: 40px; }
   table.t tbody tr { height: auto; grid-auto-rows: auto; }
   table.t td.c-meta, table.t td.c-sortval { white-space: normal; }
 }
+
+/* overview: status is the fill, area is secondary */
+svg.far .node.done .box, svg.mid .node.done .box { fill: color-mix(in srgb, var(--done) 26%, var(--base)); }
+svg.far .node.ready .box, svg.mid .node.ready .box { fill: color-mix(in srgb, var(--ready) 26%, var(--base)); }
+svg.far .node.progress .box, svg.mid .node.progress .box { fill: color-mix(in srgb, var(--progress) 34%, var(--base)); }
+svg.far .node.blocked .box { fill: color-mix(in srgb, var(--blocked) 30%, var(--base)); }
+svg.far .node rect:not(.box):not(.pulse) { width: 2px; }
+svg.far .edge.quiet, svg.far .edge:not(.up):not(.down):not(.crit):not(.dim) { opacity: .35 !important; }
+.stage.fits .minimap { display: none; }
+/* log: one-line time column under day headers */
+.logrow { grid-template-columns: 44px minmax(0, 1fr); }
+.logrow .tm { white-space: nowrap; }
+.logsec .dayhead, .steplog .dayhead { padding: 8px 0 2px; font-size: 10.5px; }
+/* dimmed steps keep their status */
+.node.dim .st { opacity: .7; }
+.node.progress.dim .box { stroke: color-mix(in srgb, var(--progress) 70%, transparent); }
+.node.blocked.dim .box { stroke: color-mix(in srgb, var(--blocked) 70%, transparent); }
+/* side panel spacing */
+.check + .actions { margin-top: 12px; }
+.foldrow { width: 100%; text-align: left; border: 0; background: color-mix(in srgb, var(--done) 6%, var(--base)); cursor: pointer; font: inherit; color: inherit; }
+/* selected view is obvious in every theme */
+.seg button[aria-pressed="true"] { background: var(--s1); box-shadow: inset 0 0 0 1px var(--o0); color: var(--text); }
+:root[data-theme="latte"] .seg button[aria-pressed="true"] { background: var(--card); }
+.seg button[aria-pressed="false"] { color: var(--sub0); }

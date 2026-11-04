@@ -34,7 +34,7 @@ const GLYPH = { done: "✓", progress: "●", blocked: "✕", ready: "○", wait
 // Short status words on graph nodes; the right edge always keeps room for the longest.
 const SHORT = { done: "✓ done", progress: "● active", blocked: "✕ blocked", ready: "○ ready", waiting: "" };
 // Green, blue, yellow and red mean status, so areas use the other accents.
-const AREA_COLORS = ["teal", "mauve", "pink", "sky", "flamingo", "lavender", "maroon", "sapphire", "rosewater", "peach"];
+const AREA_COLORS = ["teal", "mauve", "sky", "lavender", "sapphire", "pink", "rosewater"];
 
 let projects = [];          // summaries from /api/projects
 let route = { project: null, step: null };
@@ -68,13 +68,13 @@ const clock = iso => {
   const d = new Date(ts(iso));
   if (isNaN(d)) return "";
   const today = new Date().toDateString() === d.toDateString();
-  return today ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    : d.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return today ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    : d.toLocaleDateString("en-GB", { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 };
 const entry = id => (data && data.progress[id]) || null;
 const runtime = e => e && e.started ? dur((e.finished ? ts(e.finished) : Date.now()) - ts(e.started)) : "–";
 // In-progress steps: time since start when the format records it, else time since the last update.
-const since = e => e && e.started ? runtime(e) : e && e.updated ? ago(e.updated) : "in progress";
+const since = e => e && e.started ? runtime(e) : e && e.updated ? dur(Date.now() - ts(e.updated)) : "in progress";
 
 // ---------------------------------------------------------------- network --
 async function getJSON(url) {
@@ -161,7 +161,7 @@ function applyRoute() {
   } else if (route.project) {
     renderProject(true);
     // A step chosen from the address bar or a link: bring it into view.
-    if (stepChanged && !internalNav && route.step && graph) focusNode(route.step);
+    if (stepChanged && !internalNav && route.step && graph) frameStep(route.step);
   }
 }
 addEventListener("hashchange", applyRoute);
@@ -174,7 +174,7 @@ function selectStep(id, center = false) {
   internalNav = true;
   go(route.project, id, true);
   internalNav = false;
-  if (center && id && viewOf(route.project) === "graph") focusNode(id);
+  if (id && viewOf(route.project) === "graph" && graph) frameStep(id);
 }
 
 // ------------------------------------------------------------- top chrome --
@@ -193,7 +193,8 @@ function renderChrome() {
   $("legend").hidden = home || !data || !data.nodes || !prefs.legend || viewOf(route.project) !== "graph";
   // switcher label
   const cur = home ? null : (data && data.id === route.project ? data : projects.find(p => p.id === route.project));
-  $("switchName").textContent = home ? "All projects" : (cur ? cur.title : route.project);
+  const unknown = !home && projects.length && !projects.some(p => p.id === route.project);
+  $("switchName").textContent = home || unknown ? "All projects" : (cur ? cur.title : route.project);
   $("switchDot").className = "dotp " + (home ? (projects.some(p => p.error) ? "stale" : "ok") : statusDot(cur));
   document.title = home ? "Stepwise · all projects" : `${cur ? cur.title : route.project} · Stepwise`;
   // stats
@@ -211,7 +212,7 @@ function renderChrome() {
       <div class="stat ready"><b>${c.ready}</b><span>ready</span></div>
       <div class="stat waiting"><b>${c.waiting}</b><span>waiting</span></div>
       ${c.unpushed ? `<div class="stat unpushed" title="Done, but the recorded commit is not on the upstream branch yet"><b>${c.unpushed}</b><span>not pushed</span></div>` : ""}
-      ${c.retries ? `<div class="stat retries"><b>${c.retries}</b><span>retries</span></div>` : ""}`;
+      ${c.retries ? `<div class="stat retries"><b>${c.retries}</b><span>${c.retries === 1 ? "retry" : "retries"}</span></div>` : ""}`;
   } else $("stats").innerHTML = "";
   // facts
   if (!home && data && data.nodes) {
@@ -234,13 +235,13 @@ function renderBanner() {
   b.classList.toggle("bad", false);
   if (!STATIC && hubErr && Date.now() - hubOk > 8000) {
     b.hidden = false; b.classList.add("bad");
-    const when = lastFetch ? new Date(lastFetch).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    const when = lastFetch ? new Date(lastFetch).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : "";
     b.innerHTML = `<b>Connection lost</b> · ${when ? `showing data from ${esc(when)}` : "nothing loaded yet"}. <button class="btn small" data-reconnect>Retry</button>`;
     return;
   }
   if (STATIC) {
     b.hidden = false;
-    b.innerHTML = `Offline snapshot of <b>${esc(STATIC.title)}</b> from ${esc(new Date(STATIC.exported).toLocaleString())}. Done marks you set here stay in this browser only.`;
+    b.innerHTML = `Offline snapshot of <b>${esc(STATIC.title)}</b> from ${esc(new Date(STATIC.exported).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}. Done marks you set here stay in this browser only.`;
   } else if (!home && data && data.error && data.nodes) {
     b.hidden = false;
     b.innerHTML = `Showing data from ${esc(dur((data.age || 0) * 1000 + (Date.now() - lastFetch)))} ago: ${esc(data.error)}`;
@@ -329,9 +330,9 @@ function renderHome() {
   const feed = projects.flatMap(p => (p.log || []).map(e => ({ ...e, p }))).sort((a, b) => ts(b.t) - ts(a.t)).slice(0, 60);
   let day = "";
   $("feed").innerHTML = `<div class="sechead"><h3>Recent activity</h3></div>` + (feed.map(e => {
-    const d = new Date(ts(e.t)), label = isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? "Today" : d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+    const d = new Date(ts(e.t)), label = isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? "Today" : d.toLocaleDateString("en-GB", { weekday: "long", month: "short", day: "numeric" });
     const head = label !== day ? `<div class="dayhead">${esc(day = label)}</div>` : "";
-    return head + `<div class="logrow"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
+    return head + `<div class="logrow"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
   }).join("") || '<div class="empty">No activity yet.</div>');
 }
 $("main").addEventListener("click", e => {
@@ -510,7 +511,7 @@ function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
   const G = prefs.text / 100;  // text size scales the cards too
-  const W = Math.round((comfy ? 272 : 256) * G), H = Math.round((comfy ? 80 : 74) * G);
+  const W = Math.round((comfy ? 272 : 256) * G), H = Math.round((comfy ? 88 : 82) * G);
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -678,7 +679,7 @@ function updateGraph() {
     if (!key) { key = document.createElement("div"); key.className = "edgekey"; $("stage").appendChild(key); }
     key.innerHTML = `<span><i style="border-color:var(--needs)"></i>needs (before ${esc(s)})</span><span><i style="border-color:var(--unblocks)"></i>unblocks (after ${esc(s)})</span>`;
   } else key?.remove();
-  $("ctxBtn").hidden = !narrowing();
+  $("ctxBtn").style.visibility = narrowing() ? "visible" : "hidden";
   $("ctxBtn").setAttribute("aria-pressed", showContext);
   renderLegend();
 }
@@ -735,6 +736,8 @@ function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
   graph.svg.classList.toggle("far", c.k < 0.4);
+  const sr = $("stage").getBoundingClientRect();
+  $("stage").classList.toggle("fits", graph.worldW * c.k <= sr.width && graph.worldH * c.k <= sr.height);
   graph.svg.style.setProperty("--inv", (1 / c.k).toFixed(3));
   drawMinimap();
   graph.svg.classList.toggle("mid", c.k >= 0.4 && c.k < 0.62);
@@ -774,6 +777,16 @@ function focusWork() {
   act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
   if (phone()) return focusNode(act.sort((a, b) => a.order - b.order)[0].id);
   fitNodes([...near], 1, 1);
+}
+// Show the step with its direct links when that stays readable (60% or more); otherwise centre it.
+function frameStep(id) {
+  const n = byId[id]; if (!n || !graph || !graph.pos[id]) return;
+  const ps = [id, ...n.deps, ...n.users].map(x => graph.pos[x]).filter(Boolean);
+  const r = $("stage").getBoundingClientRect(), M = 48;
+  const w = Math.max(...ps.map(p => p.x)) - Math.min(...ps.map(p => p.x)) + graph.W + 2 * M;
+  const h = Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y)) + graph.H + 2 * M;
+  const k = Math.min(1, r.width / w, r.height / h);
+  if (k >= 0.6 && ps.length > 1) fitNodes([id, ...n.deps, ...n.users], 0.6, 1); else focusNode(id);
 }
 function fitRelated(id) {
   const n = byId[id]; if (!n) return;
@@ -916,9 +929,15 @@ function keepScroll(top, s) {
   }
   keepScroll.last = s;
 }
+let showDone = false;
 function renderOrder() {
   const { vis } = visibility(), s = sel(), top = listScroll();
-  const rows = data.order.map(id => byId[id]).filter(n => !vis[n.id].excluded).map(n => {
+  const shown = data.order.map(id => byId[id]).filter(n => !vis[n.id].excluded);
+  let lead = 0;
+  while (lead < shown.length && shown[lead].status === "done" && !shown[lead].unpushed && shown[lead].id !== s) lead++;
+  const fold = !showDone && lead > 3 && !query;
+  const foldRow = fold ? `<button class="orow foldrow" data-show-done><span class="n"></span><span class="dot done"></span><span class="id">${lead} done</span><span class="t muted">Steps #1–#${shown[lead - 1].order} are finished. Show them</span><span class="r">▸</span></button>` : "";
+  const rows = foldRow + shown.slice(fold ? lead : 0).map(n => {
     const e = entry(n.id);
     const area = data.areas[n.area] && n.area !== n.status && data.areas[n.area] !== n.status ? esc(data.areas[n.area]) : "";
     const meta = [area, n.size && esc(n.size), n.hard && '<span style="color:var(--red)">hard</span>'].filter(Boolean).join(" · ");
@@ -1016,7 +1035,7 @@ function overview() {
   const q = query.toLowerCase(), sv = visibility().vis;
   const hits = q ? data.order.map(id => byId[id]).filter(n => !sv[n.id].excluded) : [];
   const scope = filter ? ` in ${LABEL[filter]}` : critOn ? ` on the ${data.critical_computed ? "longest chain" : "critical path"}` : "";
-  const found = q ? `<h3 style="margin-top:2px">Matches${scope} · ${hits.length}</h3>${hits.length ? linkList(hits.slice(0, 20).map(n => n.id)) : `<p class="muted small">Nothing matches. The main view offers ways out.</p>`}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  const found = q ? `<h3 style="margin-top:2px">Matches${scope} · ${hits.length}</h3>${hits.length ? linkList(hits.slice(0, 20).map(n => n.id)) : `<p class="muted small">No matches.</p>`}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
   if (q) return `${problems}${found}`;
   // An active filter lists its steps first, so results stay readable whatever the zoom.
   const { vis: fv } = visibility();
@@ -1073,7 +1092,7 @@ function detail(n) {
     ${conflict}${unmet}${desc}${noCheck}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
-    <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>
+    ${f.down.size ? `<p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>` : ""}
     <details class="more"${detailsOpen ? " open" : ""}><summary>Details</summary>${meta}${commit}</details>
     ${stepLog(n.id)}`;
 }
@@ -1147,6 +1166,7 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-filter-ready]")) { filter = "ready"; return renderProject(); }
   if (e.target.closest("[data-local]")) { toggleStatic(sel()); return; }
   if (e.target.closest("[data-showall]")) return selectStep(null);
+  if (e.target.closest("[data-show-done]")) { showDone = true; return renderOrder(); }
   if (e.target.closest("[data-more-log]")) { logLimit += 50; return renderLog(); }
   if (e.target.closest("[data-log-toggle]")) { logOpen = !logOpen; return renderLog(); }
   if (e.target.closest("[data-grow]")) { $("app").classList.toggle("tall"); return; }
@@ -1160,9 +1180,17 @@ $("main").addEventListener("keydown", e => {
 });
 
 // ------------------------------------------------------------------- log ----
+const dayLabel = d => d.toDateString() === new Date().toDateString() ? "Today"
+  : d.toDateString() === new Date(Date.now() - 864e5).toDateString() ? "Yesterday" : d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" });
+const hhmm = d => isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 function logRowsHtml(rows, seen) {
-  return rows.map(r => `<div class="logrow${ts(r.t) > seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(clock(r.t))}</span>
-      <div class="hd"><a data-goto="${esc(r.step)}">${esc(r.step)}</a>${kindBadge(r.kind)}${r.who ? `<span class="k">${esc(r.who)}</span>` : ""}</div><div class="m">${esc(r.msg)}</div></div>`).join("");
+  let day = "";
+  return rows.map(r => {
+    const d = new Date(ts(r.t)), lab = isNaN(d) ? "" : dayLabel(d);
+    const head = lab !== day ? `<div class="dayhead">${esc(day = lab)}</div>` : "";
+    return head + `<div class="logrow${ts(r.t) > seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(hhmm(d))}</span>
+      <div class="hd"><a data-goto="${esc(r.step)}">${esc(r.step)}</a>${kindBadge(r.kind)}${r.who ? `<span class="k">${esc(r.who)}</span>` : ""}</div><div class="m">${esc(r.msg)}</div></div>`;
+  }).join("");
 }
 function stepLog(id) {
   const rows = data.log.filter(r => r.step === id).slice(-200).reverse();
