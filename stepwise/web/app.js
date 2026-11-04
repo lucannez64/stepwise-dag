@@ -50,6 +50,7 @@ let graph = null;           // built graph for the open project
 let busy = false;
 
 const sel = () => route.step && byId[route.step] ? route.step : null;
+const phone = () => matchMedia("(max-width: 900px)").matches;
 const viewOf = id => prefs.view[id] || (matchMedia("(max-width: 900px)").matches ? "order" : "graph");
 const dirOf = id => prefs.dir[id] || (data && data.id === id && data.direction) || "TB";
 const edgesOf = id => prefs.edges[id] || (data && data.id === id && data.edges) || "all";
@@ -303,8 +304,9 @@ function renderHome() {
       ${stackBar(c)}
       <div class="counts">${sw("progress", c.progress, "in progress")}${c.blocked ? sw("blocked", c.blocked, "blocked") : ""}${sw("ready", c.ready, "ready")}<span><i class="sw" style="background:var(--s1)"></i><b>${c.waiting}</b> waiting</span>${c.unpushed ? sw("peach", c.unpushed, "not pushed") : ""}</div>
       ${p.problems && p.problems.length ? `<div class="errbox">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : ""}
-      <div><h3>${p.active.length ? "In progress" : "Ready next"}</h3><ul>${active || ready || '<li class="empty">Nothing ready</li>'}</ul></div>
-      ${p.active.length && ready ? `<div><h3>Ready next</h3><ul>${ready}</ul></div>` : ""}
+      ${p.active.length ? `<div class="sec-active"><h3>In progress</h3><ul>${active}</ul></div>` : ""}
+      ${ready ? `<details class="sec-ready"${phone() ? "" : " open"}><summary><h3>${phone() ? `Show next steps · ${p.ready.length}` : "Ready next"}</h3></summary><ul>${ready}</ul></details>`
+        : p.active.length ? "" : '<div class="empty">Nothing ready</div>'}
       ${p.critical && p.critical.total ? `<div class="crit-line"><span class="muted small">${p.critical.computed ? "Longest chain" : "Critical path"}</span>${stackBar({ done: p.critical.done, total: p.critical.total, progress: 0, blocked: 0, ready: 0 }, "stack thin")}<span class="small"><b>${p.critical.done}</b>/${p.critical.total}</span></div>` : ""}
       ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 80))}</div>` : ""}
       <div class="foot">${r ? `<span><b>${esc(r.head || "?")}</b> ${esc(r.branch || "")}</span><span><b>${r.ahead ?? "–"}</b> ahead${r.dirty ? " · dirty" : ""}</span>` : ""}${p.load ? `<span>load <b>${p.load[0].toFixed(2)}</b></span>` : ""}${p.box ? `<span>box <b>${p.box[0].toFixed(2)}</b></span>` : ""}</div>
@@ -467,7 +469,7 @@ function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
   const G = prefs.text / 100;  // text size scales the cards too
-  const W = Math.round((comfy ? 252 : 236) * G), H = Math.round((comfy ? 62 : 58) * G);
+  const W = Math.round((comfy ? 296 : 280) * G), H = Math.round((comfy ? 62 : 58) * G);
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -643,7 +645,7 @@ function initialView() {
   const s = sel();
   const active = data.nodes.filter(n => n.status === "progress").sort((a, b) => a.order - b.order)[0];
   if (s) focusNode(s);
-  else if (active) fitNodes([active.id, ...active.deps, ...active.users], 0.65, 0.85);
+  else if (active) focusNode(active.id);
 }
 // Fit the camera around some steps, for example the critical path.
 function fitNodes(ids, floor = 0.45, ceil = 1.1) {
@@ -969,6 +971,7 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-local]")) { toggleStatic(sel()); return; }
   if (e.target.closest("[data-showall]")) return selectStep(null);
   if (e.target.closest("[data-more-log]")) { logLimit += 50; return renderLog(); }
+  if (e.target.closest("[data-log-toggle]")) { logOpen = !logOpen; return renderLog(); }
   if (e.target.closest("[data-clear-q]")) { $("q").value = query = ""; return renderStage(); }
   if (e.target.closest("[data-reset-filters]")) { $("q").value = query = ""; filter = null; critOn = false; offAreas().clear(); return renderProject(); }
 });
@@ -987,7 +990,7 @@ function stepLog(id) {
   const rows = data.log.filter(r => r.step === id).slice(-200).reverse();
   return `<h3>Log · ${rows.length}</h3>${rows.length ? `<div class="steplog">${logRowsHtml(rows, Infinity)}</div>` : `<div class="empty">Nothing logged for this step yet.</div>`}`;
 }
-let logLimit = 20;
+let logLimit = 20, logOpen = false;
 function renderLog() {
   const box = $("logsec"), s = sel(), latest = data.log.length ? ts(data.log[data.log.length - 1].t) : 0;
   // With a step selected, its own log sits at the end of the details, so they get the whole column.
@@ -999,7 +1002,8 @@ function renderLog() {
   const cap = matchMedia("(max-width: 900px)").matches ? logLimit : 200;
   const all = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s);
   const rows = all.slice(-cap).reverse();
-  box.innerHTML = `<div class="sechead"><h3>${s ? `Log · ${esc(s)}` : "Running log"}</h3><span class="muted small">${rows.length}</span>${s ? `<button class="btn ghost small" data-showall style="margin-left:auto;height:24px">All steps</button>` : ""}</div>` +
+  box.classList.toggle("open", logOpen);
+  box.innerHTML = `<div class="sechead"><h3>Running log</h3><span class="muted small">${all.length}</span><button class="btn ghost small" data-log-toggle style="margin-left:auto;height:24px" aria-expanded="${logOpen}">${logOpen ? "Collapse" : "Expand"}</button></div>` +
     (logRowsHtml(rows, seen) + (all.length > rows.length && cap < 200 ? `<button class="btn ghost small" data-more-log style="margin-top:8px">Show ${Math.min(50, all.length - rows.length)} more</button>` : "")
       || `<div class="empty">${s ? "Nothing logged for this step yet." : "No entries yet. Agents add them with the project's CLI."}</div>`);
   seenLog.set(data.id, Math.max(seen, latest || 0));
