@@ -739,3 +739,31 @@ td.c-meta { display: none; }
   .toolbar .search { flex: 1 1 100%; }
   .toolbar .search input { min-height: 44px; }
 }
+
+/* status words on graph nodes keep their colours in every theme */
+.node .st-done { fill: var(--done); } .node .st-progress { fill: var(--progress); } .node .st-ready { fill: var(--ready); }
+.node .st-blocked { fill: var(--blocked); } .node.unpushed .st { fill: var(--peach); }
+:root[data-theme="latte"] .node .st-done { fill: #28751f; } :root[data-theme="latte"] .node .st-ready { fill: #1550c8; }
+:root[data-theme="latte"] .node .st-progress { fill: #b56d00; }
+/* overview: readable level labels and counts */
+.lvlc { display: none; font-weight: 500; }
+svg.far .lvl { font-size: calc(12px * var(--inv, 1)); }
+svg.far .lvlc { display: inline; }
+svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: calc(13px * var(--inv, 1)); }
+/* table: titles first and readable */
+table.t td.c-title { font-size: 14px; color: var(--text); }
+table.t td { font-size: 12px; } table.t td.c-id { font-size: 12.5px; }
+table.t tbody tr { height: 40px; }
+.seg .vi { display: none; }
+#moreBtn .badge { min-width: 18px; height: 18px; border-radius: 9px; background: var(--blue); color: var(--base); font-size: 11px; font-weight: 700; display: inline-grid; place-items: center; padding: 0 5px; }
+.sec-ready summary h3::after { content: " ▾"; } .sec-ready:not([open]) summary h3::after { content: " ▸"; }
+@media (max-width: 900px) {
+  /* two rows: the header, then search + views + filters */
+  .toolbar { flex-wrap: wrap; }
+  .toolbar .search { flex: 1 1 0; min-width: 0; }
+  .toolbar > .seg:not(#filterSeg) button { padding: 0 10px; }
+  .seg .vi { display: block; } .seg .vl { display: none; }
+  #moreBtn { width: auto; padding: 0 10px; } #moreBtn .lbl { display: none; }
+  #filterSeg { display: none; }
+  .toolbar.open #filterSeg { display: flex; }
+}

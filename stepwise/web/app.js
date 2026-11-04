@@ -338,6 +338,7 @@ $("main").addEventListener("click", e => {
   if (route.project) return;
   const a = e.target.closest("[data-step]");
   if (a) { e.stopPropagation(); return go(a.dataset.go, a.dataset.step); }
+  if (e.target.closest("summary, details, a, button:not(.card)")) return;
   const c = e.target.closest(".card[data-go]");
   if (c) go(c.dataset.go);
 });
@@ -393,6 +394,9 @@ function renderToolbar() {
   document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === v));
   $("zFocus").textContent = sel() ? "Fit related" : "Focus active";
   $("zFocus").title = sel() ? "Fit the selected step and its direct links (w)" : "Focus the work in progress (w)";
+  const nf = (filter ? 1 : 0) + (critOn ? 1 : 0) + (offAreas().size ? 1 : 0);
+  $("moreBtn").innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M4 8h8M6.5 12h3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="lbl">Filters</span>${nf ? `<span class="badge">${nf}</span>` : ""}`;
+  $("moreBtn").setAttribute("aria-label", nf ? `Filters, ${nf} active` : "Filters");
   const act = activeSteps();
   $("actNav").hidden = v !== "graph" || act.length < 2;
   $("actPos").textContent = `${Math.min(activeIdx, act.length - 1) + 1} / ${act.length}`;
@@ -577,8 +581,12 @@ function buildGraph(sig) {
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
-    if (lr) svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL).textContent = "L" + lvls[li];
-    else svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL).textContent = "L" + lvls[li];
+    const t = lr ? svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL) : svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL);
+    t.textContent = "L" + lvls[li];
+    const done = l.filter(n => n.status === "done").length;
+    // Counts fit beside a row label; columns are too narrow, so they get a second line.
+    if (lr) svgEl("tspan", { class: "lvlc", x: starts[li], dy: "1.2em" }, t).textContent = `${done}/${l.length}`;
+    else svgEl("tspan", { class: "lvlc", dx: 6 }, t).textContent = `${l.length} steps · ${done} done`;
   });
   const edges = [];
   for (const n of LN) for (const d of depsOf(n)) {
@@ -725,6 +733,7 @@ function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
   graph.svg.classList.toggle("far", c.k < 0.4);
+  graph.svg.style.setProperty("--inv", (1 / c.k).toFixed(3));
   drawMinimap();
   graph.svg.classList.toggle("mid", c.k >= 0.4 && c.k < 0.62);
   $("zPct").textContent = Math.round(c.k * 100) + "%";
@@ -920,9 +929,9 @@ function renderOrder() {
 }
 
 const COLS = [
-  ["order", "#", n => n.order], ["id", "Step", n => n.id], ["area", "Area", n => data.areas[n.area] || n.area],
-  ["level", "Level", n => n.level], ["size", "Size", n => n.size], ["status", "State", n => n.status],
-  ["title", "Title", n => n.title], ["check", "Done when", n => n.check || n.desc], ["deps", "Needs", n => n.deps.length],
+  ["order", "#", n => n.order], ["id", "Step", n => n.id], ["title", "Title", n => n.title], ["status", "State", n => n.status],
+  ["check", "Done when", n => n.check || n.desc], ["area", "Area", n => data.areas[n.area] || n.area],
+  ["level", "Level", n => n.level], ["size", "Size", n => n.size], ["deps", "Needs", n => n.deps.length],
   ["updated", "Updated", n => (entry(n.id) || {}).updated || ""], ["who", "By", n => (entry(n.id) || {}).who || ""],
 ];
 function renderTable() {
@@ -936,10 +945,12 @@ function renderTable() {
   const body = rows.map(n => {
     const e = entry(n.id) || {};
     return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}" tabindex="0">
-      <td class="muted c-order">${n.order}</td><td class="id c-id">${esc(n.id)}</td><td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
-      <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
+      <td class="muted c-order">${n.order}</td><td class="id c-id">${esc(n.id)}</td><td class="c-title">${esc(n.title)}</td>
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
-      <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
+      <td class="wrap c-check">${esc(n.check || n.desc)}</td>
+      <td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
+      <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
+      <td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
       <td class="c-meta">${esc([data.areas[n.area] || n.area, n.size, n.deps.length ? `${n.deps.length} prerequisite${n.deps.length > 1 ? "s" : ""}` : "no prerequisites"].filter(Boolean).join(" · "))}</td>
       ${["order", "id", "title", "status"].includes(tableSort.key) ? "" : `<td class="c-sortval">${esc((COLS.find(c => c[0] === tableSort.key) || COLS[0])[1])}: ${esc(String((COLS.find(c => c[0] === tableSort.key) || COLS[0])[2](n)))}</td>`}
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
