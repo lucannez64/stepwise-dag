@@ -115,8 +115,10 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .search input::-webkit-search-cancel-button { display: none; }
 .qclear { position: absolute; right: 5px; width: 20px; height: 20px; border: 0; border-radius: 4px; background: none; color: var(--o1); cursor: pointer; font-size: 11px; }
 .qclear:hover { background: var(--s0); color: var(--text); }
-.nomatch { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 3; padding: 8px 8px 8px 14px; border-radius: 10px;
-  background: var(--card); border: 1px solid var(--s1); box-shadow: var(--shadow); display: flex; gap: 8px; align-items: center; }
+.nomatch { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 3; padding: 22px 26px; border-radius: 14px; text-align: center;
+  background: var(--card); border: 1px solid var(--s1); box-shadow: var(--shadow); max-width: min(420px, 90%); }
+.nomatch h2 { font-size: 15px; margin: 0 0 12px; }
+.stage.empty .minimap, .stage.empty .canvasbar, .stage.empty .dotgrid { display: none; }
 .seg { display: inline-flex; padding: 2px; border: 1px solid var(--s1); border-radius: 8px; background: var(--base); }
 .seg button { height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: none; cursor: pointer; color: var(--sub1); }
 .seg button { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -168,7 +170,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .sechead h3 { margin: 0; }
 
 /* graph */
-.edge { fill: none; stroke: var(--s2); stroke-width: 1.2; opacity: .75; transition: opacity .15s; }
+.edge { fill: none; stroke: var(--s2); stroke-width: 1.2; opacity: .32; transition: opacity .15s; }
 .edge.hov { stroke: var(--o2); stroke-width: 2; opacity: 1; }
 .node.hov .box { stroke: var(--o2); }
 .edge.up { stroke: var(--needs); stroke-width: 2.3; opacity: 1; }
@@ -179,7 +181,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .node .box { fill: var(--card); stroke: var(--s1); stroke-width: 1; }
 .node.waiting .box { fill: color-mix(in srgb, var(--s0) 45%, var(--base)); stroke: var(--s1); }
 .node.ready .box { fill: color-mix(in srgb, var(--ready) var(--tint), var(--base)); stroke: var(--ready); }
-.node.done .box { fill: color-mix(in srgb, var(--done) var(--tint), var(--base)); stroke: color-mix(in srgb, var(--done) 75%, var(--base)); }
+.node.done .box { fill: color-mix(in srgb, var(--done) 7%, var(--base)); stroke: color-mix(in srgb, var(--done) 75%, var(--base)); }
 .node.unpushed .box { stroke-dasharray: 5 3; stroke: var(--peach); stroke-width: 1.6; }
 .node.progress .box { fill: color-mix(in srgb, var(--progress) var(--tint-strong), var(--base)); stroke: var(--progress); stroke-width: 2; }
 .node.blocked .box { fill: color-mix(in srgb, var(--blocked) var(--tint-strong), var(--base)); stroke: var(--blocked); stroke-width: 2; }
@@ -589,8 +591,7 @@ table.t td.c-area { min-width: 130px; max-width: 190px; }
 table.t td.c-title { min-width: 240px; }
 table.t { font-size: 12.5px; }
 /* home cards: sections start at the same height across cards */
-.card .sec-active { min-height: 86px; }
-.card .sec-ready { min-height: 100px; }
+
 @media (max-width: 900px) {
   #filterSeg { order: 5; flex-basis: 100%; }
   #filterSeg button { flex: 1; justify-content: center; }
@@ -693,3 +694,19 @@ svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: 34px; }
   .pop .pseg button, .pop .btn { min-height: 44px; }
   .pop .row, .prow { min-height: 44px; }
 }
+
+/* side lists: id and status on top, the full title underneath */
+.links li { grid-template-columns: 10px auto minmax(0, 1fr) auto; grid-template-areas: "d id . s" "t t t t"; row-gap: 3px; padding: 8px 10px; }
+.links li .dot { grid-area: d; margin-top: 4px; } .links li .id { grid-area: id; font-size: 12px; } .links li .s { grid-area: s; }
+.links li .t { grid-area: t; display: block; -webkit-line-clamp: unset; font-size: 13px; color: var(--text); }
+.links li.none { grid-template-areas: none; }
+.sortbar { display: none; }
+@media (max-width: 900px) {
+  /* header and controls stay reachable while a long list scrolls */
+  .topbar { position: sticky; top: 0; z-index: 26; }
+  .toolbar { position: sticky; top: 56px; z-index: 25; }
+  .sortbar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--s0); }
+  .sortbar select { height: 40px; border-radius: 7px; border: 1px solid var(--s1); background: var(--card); padding: 0 8px; margin-left: 6px; }
+  .sortbar .btn { min-height: 40px; margin-left: auto; }
+}
+.nomatch, .nomatch h2 { color: var(--text); opacity: 1; }

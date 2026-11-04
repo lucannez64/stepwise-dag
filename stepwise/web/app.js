@@ -453,21 +453,26 @@ function renderStage(routeOnly) {
     if (v === "order") renderOrder(); else renderTable();
   }
   const q = query.toLowerCase();
-  const n = q ? data.nodes.filter(x => matches(x, q)).length : 0;
+  const allVis = visibility().vis;
+  const n = q ? data.nodes.filter(x => !allVis[x.id].excluded).length : 0;
   $("qCount").hidden = !q; $("qClear").hidden = !q; $("qKbd").hidden = !!q; $("qCount").textContent = q ? `${n}` : "";
   $("qCount").title = q ? `${n} step${n === 1 ? "" : "s"} match` : "";
   let nm = $("stage").querySelector(".nomatch");
-  const shownVis = v === "graph" ? visibility().vis : null;
-  const anyShown = !shownVis || data.nodes.some(x => !shownVis[x.id].excluded);
-  if (v === "graph" && !anyShown && !q) {
+  const anyShown = data.nodes.some(x => !allVis[x.id].excluded);
+  const empty = v === "graph" && narrowing() && !anyShown;
+  $("stage").classList.toggle("empty", empty);
+  if (empty) {
     if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
-    nm.innerHTML = `No steps match these filters. <button class="btn ghost small" data-reset-filters>Reset filters</button>`;
-  } else if (v === "graph" && q && !n) {
-    if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
-    nm.innerHTML = `No step matches “${esc(query)}”. <button class="btn ghost small" data-clear-q>Clear search</button>`;
+    nm.innerHTML = emptyHtml();
   } else nm?.remove();
 }
 
+// One wording for "nothing matches", naming what is active and offering both ways out.
+function emptyHtml() {
+  const what = filter ? LABEL[filter] + " steps" : critOn ? "steps on the " + (data.critical_computed ? "longest chain" : "critical path") : "steps";
+  const btns = [query && `<button class="btn" data-clear-q>Clear search</button>`, (filter || critOn || offAreas().size) && `<button class="btn" data-reset-filters>Clear filters</button>`].filter(Boolean).join("");
+  return `<h2>No ${esc(what)} match${query ? ` “${esc(query)}”` : ""}</h2><div class="btns" style="justify-content:center">${btns}</div>`;
+}
 const narrowing = () => !!(filter || critOn || query || offAreas().size);
 // With a filter on, the graph lays out only the matching steps, compactly; "Keep layout" shows them in place.
 function layoutNodes() {
@@ -560,6 +565,7 @@ function buildGraph(sig) {
 
   stage.innerHTML = `<div class="dotgrid"></div>`;
   stage.appendChild(canvasBar());
+  canvasBar().hidden = !layoutNodes().length;
   const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph`, style: `--gs:${G}` }, stage);
   const vp = svgEl("g", {}, svg);
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
@@ -609,6 +615,7 @@ function buildGraph(sig) {
   }
   graph = { sig, svg, vp, edges, els, pos, W, H, worldW, worldH, lr };
   const mm = document.createElement("div");
+  mm.hidden = !LN.length;
   mm.className = "minimap"; mm.title = "Overview: click to move there";
   mm.innerHTML = "<canvas></canvas>";
   mm.addEventListener("pointerdown", e => {
@@ -919,7 +926,8 @@ function renderTable() {
       <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
   }).join("");
-  $("stage").innerHTML = `<div class="list"><table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : noRows()}</div>`;
+  const sortSel = `<div class="sortbar"><label>Sort by <select data-sortsel>${COLS.map(c => `<option value="${c[0]}"${c[0] === tableSort.key ? " selected" : ""}>${c[1]}</option>`).join("")}</select></label><button class="btn small" data-sortdir>${tableSort.dir > 0 ? "↑ Ascending" : "↓ Descending"}</button></div>`;
+  $("stage").innerHTML = `<div class="list">${sortSel}<table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>${rows.length ? "" : noRows()}</div>`;
   keepScroll(top, s);
 }
 $("main").addEventListener("click", e => {
@@ -929,6 +937,10 @@ $("main").addEventListener("click", e => {
   const row = e.target.closest(".orow[data-id], tr[data-id]");
   if (row) return selectStep(row.dataset.id === sel() ? null : row.dataset.id);
 });
+$("main").addEventListener("change", e => {
+  if (e.target.matches("[data-sortsel]")) { tableSort = { key: e.target.value, dir: 1 }; renderTable(); }
+});
+$("main").addEventListener("click", e => { if (e.target.closest("[data-sortdir]")) { tableSort.dir = -tableSort.dir; renderTable(); } });
 $("main").addEventListener("keydown", e => {
   const row = e.target.closest(".orow[data-id], tr[data-id]");
   if (row && e.key === "Enter") selectStep(row.dataset.id);
@@ -964,8 +976,11 @@ function overview() {
   const by = st => data.nodes.filter(n => n.status === st).sort((a, b) => a.order - b.order);
   const prog = by("progress"), blocked = by("blocked"), ready = by("ready");
   const problems = data.problems && data.problems.length ? `<div class="errbox"><b>Plan problems</b><br>${data.problems.map(esc).join("<br>")}</div>` : "";
-  const q = query.toLowerCase(), hits = q ? data.order.map(id => byId[id]).filter(n => matches(n, q)) : [];
-  const found = q ? `<h3 style="margin-top:2px">Matches · ${hits.length}</h3>${linkList(hits.slice(0, 20).map(n => n.id), "No step matches.")}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  const q = query.toLowerCase(), sv = visibility().vis;
+  const hits = q ? data.order.map(id => byId[id]).filter(n => !sv[n.id].excluded) : [];
+  const scope = filter ? ` in ${LABEL[filter]}` : critOn ? ` on the ${data.critical_computed ? "longest chain" : "critical path"}` : "";
+  const found = q ? `<h3 style="margin-top:2px">Matches${scope} · ${hits.length}</h3>${hits.length ? linkList(hits.slice(0, 20).map(n => n.id)) : `<div class="state-card" style="padding:16px">${emptyHtml()}</div>`}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  if (q) return `${problems}${found}`;
   // An active filter lists its steps first, so results stay readable whatever the zoom.
   const { vis: fv } = visibility();
   const chainName = data.critical_computed ? "longest chain" : "critical path";
