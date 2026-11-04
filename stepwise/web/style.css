@@ -682,10 +682,14 @@ svg.hide-ex .node.ex, svg.hide-ex .edge.ex { display: none; }
   table.t td.c-id { display: block; grid-area: id; } table.t td.c-status { display: block; grid-area: st; }
   table.t td.c-title { display: block; grid-area: t; min-width: 0; white-space: normal; color: var(--sub1); }
 }
-/* home: sections and footers line up across a row */
-@media (min-width: 901px) {
-  .cards { grid-auto-rows: auto; }
-  .card { display: grid; grid-template-rows: subgrid; grid-row: span 10; gap: 12px; }
-  .card .slot { min-height: 0; }
-  .card .sec-active, .card .sec-ready { min-height: 0; }
+/* home: content-sized sections with a steady rhythm */
+.card .slot { display: none; }
+
+/* far zoom: active and blocked work stays prominent */
+svg.far .node.progress .box, svg.far .node.blocked .box { stroke-width: 6; }
+svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: 34px; }
+@media (max-width: 900px) {
+  .pop { left: 8px; right: 8px; width: auto; }
+  .pop .pseg button, .pop .btn { min-height: 44px; }
+  .pop .row, .prow { min-height: 44px; }
 }

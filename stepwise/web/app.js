@@ -447,6 +447,7 @@ function renderStage(routeOnly) {
     const sig = layoutSig();
     if (!graph || graph.sig !== sig || !stage.querySelector("svg.g")) buildGraph(sig);
     updateGraph();
+    keepFramed();
   } else {
     graph = null;
     if (v === "order") renderOrder(); else renderTable();
@@ -467,8 +468,16 @@ function renderStage(routeOnly) {
   } else nm?.remove();
 }
 
+const narrowing = () => !!(filter || critOn || query || offAreas().size);
+// With a filter on, the graph lays out only the matching steps, compactly; "Keep layout" shows them in place.
+function layoutNodes() {
+  if (!narrowing() || showContext) return data.nodes;
+  const { vis } = visibility();
+  return data.nodes.filter(n => !vis[n.id].excluded);
+}
 function layoutSig() {
-  return JSON.stringify([data.id, dirOf(data.id), prefs.density, prefs.sizes, prefs.text, data.nodes.map(n => [n.id, n.deps, n.level, n.order, n.area])]);
+  const ln = layoutNodes();
+  return JSON.stringify([data.id, dirOf(data.id), prefs.density, prefs.sizes, prefs.text, ln.length === data.nodes.length ? null : ln.map(n => n.id), data.nodes.map(n => [n.id, n.deps, n.level, n.order, n.area])]);
 }
 
 const measure = (() => {
@@ -496,7 +505,10 @@ function buildGraph(sig) {
   const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
   const levels = [];
-  data.nodes.forEach(n => (levels[n.level] ||= []).push(n));
+  const LN = layoutNodes(), inSet = new Set(LN.map(n => n.id));
+  const lvls = [...new Set(LN.map(n => n.level))].sort((a, b) => a - b), rank = Object.fromEntries(lvls.map((l, i) => [l, i]));
+  const depsOf = n => n.deps.filter(d => inSet.has(d)), usersOf = n => n.users.filter(u => inSet.has(u));
+  LN.forEach(n => (levels[rank[n.level]] ||= []).push(n));
   for (let i = 0; i < levels.length; i++) levels[i] ||= [];
   const areaIdx = Object.fromEntries(Object.keys(data.areas).map((a, i) => [a, i]));
   levels.forEach(l => l.sort((a, b) => (areaIdx[a.area] ?? 0) - (areaIdx[b.area] ?? 0) || a.order - b.order));
@@ -507,7 +519,7 @@ function buildGraph(sig) {
     const down = it % 2 === 0;
     for (const l of (down ? levels.slice(1) : levels.slice(0, -1).reverse())) {
       const b = {};
-      l.forEach(n => b[n.id] = bary(n, down ? n.deps : n.users));
+      l.forEach(n => b[n.id] = bary(n, down ? depsOf(n) : usersOf(n)));
       l.sort((x, y) => b[x.id] - b[y.id]);
       l.forEach((n, i) => r[n.id] = i);
     }
@@ -553,11 +565,11 @@ function buildGraph(sig) {
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
-    if (lr) svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL).textContent = "L" + li;
-    else svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL).textContent = "L" + li;
+    if (lr) svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL).textContent = "L" + lvls[li];
+    else svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL).textContent = "L" + lvls[li];
   });
   const edges = [];
-  for (const n of data.nodes) for (const d of n.deps) {
+  for (const n of LN) for (const d of depsOf(n)) {
     const a = pos[d], b = pos[n.id];
     let p;
     // Bend points vary a little per edge, so parallel links fan out instead of stacking.
@@ -567,7 +579,7 @@ function buildGraph(sig) {
     edges.push({ from: d, to: n.id, el: svgEl("path", { class: "edge", d: p }, gE) });
   }
   const els = {};
-  for (const n of data.nodes) {
+  for (const n of LN) {
     const { x, y } = pos[n.id];
     const g = svgEl("g", { class: "node", transform: `translate(${x},${y})`, tabindex: 0, role: "button", "data-id": n.id }, gN);
     svgEl("rect", { class: "pulse", width: W, height: H, rx: 7 }, g);
@@ -608,7 +620,10 @@ function buildGraph(sig) {
   stage.appendChild(mm);
   bindGraph(svg);
   const cam = cams.get(data.id);
-  if (cam && cam.sig === sig) applyCam(); else initialView();
+  if (cam && cam.sig === sig) applyCam();
+  else if (LN.length !== data.nodes.length) fitNodes(LN.map(n => n.id), 0.62, 1);
+  else initialView();
+  graph.lastR = stage.getBoundingClientRect();
 }
 
 function updateGraph() {
@@ -634,9 +649,8 @@ function updateGraph() {
     if (vis[e.from].excluded || vis[e.to].excluded) cls += " ex";
     e.el.setAttribute("class", cls);
   }
-  const narrowing = !!(filter || critOn || query || offAreas().size);
-  graph.svg.classList.toggle("hide-ex", narrowing && !showContext);
-  $("ctxBtn").hidden = !narrowing;
+  graph.svg.classList.toggle("hide-ex", narrowing() && !showContext);
+  $("ctxBtn").hidden = !narrowing();
   $("ctxBtn").setAttribute("aria-pressed", showContext);
   renderLegend();
 }
@@ -1155,7 +1169,7 @@ $("q").addEventListener("input", () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
     const q = query.toLowerCase(), hits = q ? data.nodes.filter(n => matches(n, q)).map(n => n.id) : [];
-    if (graph && hits.length && hits.length <= 20) fitNodes(hits, 0.62, 1);
+    // the filtered layout already frames the matches
   }, 250);
 });
 $("q").addEventListener("keydown", e => {
@@ -1178,7 +1192,7 @@ $("toolbar").addEventListener("click", e => {
   if (f) {
     filter = f.dataset.filter || null;
     renderProject();
-    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.order.filter(id => byId[id].status === filter), 1, 1);
+
     return;
   }
 });
@@ -1203,8 +1217,8 @@ $("areaMenu").addEventListener("change", e => {
   box.checked ? off.delete(box.dataset.area) : off.add(box.dataset.area);
   renderProject();
 });
-$("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical, 1, 1); };
-$("ctxBtn").onclick = () => { showContext = !showContext; if (graph) updateGraph(); };
+$("critBtn").onclick = () => { critOn = !critOn; renderProject(); };
+$("ctxBtn").onclick = () => { showContext = !showContext; renderStage(); };
 $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "direct" ? "all" : "direct"; savePrefs(); renderProject(); };
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
@@ -1335,4 +1349,19 @@ setInterval(tickLive, 1000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && !STATIC) { pollProject(); pollProjects(); } });
 // keep runtimes and "ago" labels moving
 setInterval(() => { if (route.project && data && data.nodes && data.counts.progress) renderPanel(); if (!route.project) renderHome(); }, 30000);
-addEventListener("resize", () => { if (graph && !cams.has(data.id)) initialView(); });
+addEventListener("resize", () => keepFramed());
+function keepFramed() {
+  if (!graph || !data || !cams.has(data.id)) return;
+  const r = $("stage").getBoundingClientRect(), o = graph.lastR;
+  if (!r.width || !r.height) return;
+  if (!o || !o.width || !o.height) { graph.lastR = r; return initialView(); }
+  if (o.width === r.width && o.height === r.height) return;
+  const c = cams.get(data.id);
+  graph.lastR = r;
+  setCam(c.k, c.tx + (r.width - o.width) / 2, c.ty + (r.height - o.height) / 2);
+  const id = sel() || (activeSteps()[0] || {}).id, p = id && graph.pos[id];
+  if (p) {
+    const c2 = cams.get(data.id), x = c2.tx + p.x * c2.k, y = c2.ty + p.y * c2.k;
+    if (x < 0 || y < 0 || x + graph.W * c2.k > r.width || y + graph.H * c2.k > r.height) focusNode(id);
+  }
+}
