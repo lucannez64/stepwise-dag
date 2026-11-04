@@ -1001,3 +1001,7 @@ setInterval(tickLive, 1000);
 // keep runtimes and "ago" labels moving
 setInterval(() => { if (route.project && data && data.nodes && data.counts.progress) renderPanel(); if (!route.project) renderHome(); }, 30000);
 addEventListener("resize", () => { if (graph && !cams.has(data.id)) initialView(); });
+// A plain mouse wheel scrolls the area chips sideways.
+$("areas").addEventListener("wheel", e => {
+  if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && $("areas").scrollWidth > $("areas").clientWidth) { e.preventDefault(); $("areas").scrollLeft += e.deltaY; }
+}, { passive: false });
