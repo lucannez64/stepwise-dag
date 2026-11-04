@@ -34,7 +34,7 @@ const GLYPH = { done: "✓", progress: "●", blocked: "✕", ready: "○", wait
 // Short status words on graph nodes; the right edge always keeps room for the longest.
 const SHORT = { done: "✓ done", progress: "● active", blocked: "✕ blocked", ready: "○ ready", waiting: "" };
 // Green, blue, yellow and red mean status, so areas use the other accents.
-const AREA_COLORS = ["teal", "mauve", "sky", "lavender", "sapphire", "pink", "rosewater"];
+const AREA_COLORS = ["teal", "mauve", "sky", "flamingo", "lavender", "rosewater"];
 
 let projects = [];          // summaries from /api/projects
 let route = { project: null, step: null };
@@ -180,7 +180,7 @@ function selectStep(id, center = false) {
 // ------------------------------------------------------------- top chrome --
 function stackBar(c, cls = "stack") {
   const t = c.total || 1;
-  const seg = (n, col) => n ? `<i style="width:${(100 * n / t).toFixed(2)}%;background:var(--${col})"></i>` : "";
+  const seg = (n, col) => n ? `<i style="width:${(100 * n / t).toFixed(2)}%;background:${col === "ready" ? "color-mix(in srgb, var(--ready) 55%, var(--s0))" : `var(--${col})`}"></i>` : "";
   // "done" is always the first segment, so only it shows at full strength.
   return `<span class="${cls}"><i style="width:${(100 * (c.done || 0) / t).toFixed(2)}%;background:var(--done)"></i>${seg(c.progress, "progress")}${seg(c.blocked, "blocked")}${seg(c.ready, "ready")}</span>`;
 }
@@ -401,7 +401,7 @@ function renderToolbar() {
   const act = activeSteps();
   $("actNav").hidden = v !== "graph" || act.length < 2;
   $("actPos").textContent = `${Math.min(activeIdx, act.length - 1) + 1} / ${act.length}`;
-  $("zoomCtl").hidden = v !== "graph"; $("dirBtn").hidden = v !== "graph"; $("edgeBtn").hidden = v !== "graph";
+  $("zoomCtl").hidden = v !== "graph"; $("dirBtn").hidden = v !== "graph"; $("edgeBtn").hidden = v !== "graph"; $("ctxBtn").hidden = v !== "graph";
   const lr = dirOf(data.id) === "LR";
   $("dirBtn").innerHTML = lr
     ? `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="2" y="9" width="6" height="6" rx="1.5"/><rect x="16" y="4" width="6" height="6" rx="1.5"/><rect x="16" y="14" width="6" height="6" rx="1.5"/><path d="M8 12h4m0 0c2 0 2-5 4-5m-4 5c2 0 2 5 4 5"/></g></svg>`
@@ -447,7 +447,7 @@ function renderStage(routeOnly) {
   hideTip();
   if (viewOf(data.id) !== "graph" || !graph) parkBar();
   const stage = $("stage"), v = viewOf(data.id);
-  stage.className = "stage " + v;
+  stage.classList.remove("graph", "order", "table"); stage.classList.add("stage", v);
   if (v === "graph") {
     const sig = layoutSig();
     if (!graph || graph.sig !== sig || !stage.querySelector("svg.g")) buildGraph(sig);
@@ -632,9 +632,11 @@ function buildGraph(sig) {
   const mm = document.createElement("div");
   mm.hidden = !LN.length;
   mm.className = "minimap"; mm.title = "Overview: click to move there";
-  mm.innerHTML = "<canvas></canvas>";
+  mm.innerHTML = `<button class="mmtog" aria-label="Show or hide the overview map" title="Show or hide the map">▾</button><canvas></canvas>`;
+  mm.querySelector(".mmtog").addEventListener("pointerdown", e => { e.stopPropagation(); prefs.miniOff = !prefs.miniOff; savePrefs(); drawMinimap(); });
   mm.addEventListener("pointerdown", e => {
     e.stopPropagation();
+    if (prefs.miniOff) return;
     const b = mm.querySelector("canvas").getBoundingClientRect(), r = stage.getBoundingClientRect(), c = cams.get(data.id);
     const wx = (e.clientX - b.left) / graph.mini.sc, wy = (e.clientY - b.top) / graph.mini.sc;
     setCam(c.k, r.width / 2 - wx * c.k, r.height / 2 - wy * c.k);
@@ -679,7 +681,8 @@ function updateGraph() {
     if (!key) { key = document.createElement("div"); key.className = "edgekey"; $("stage").appendChild(key); }
     key.innerHTML = `<span><i style="border-color:var(--needs)"></i>needs (before ${esc(s)})</span><span><i style="border-color:var(--unblocks)"></i>unblocks (after ${esc(s)})</span>`;
   } else key?.remove();
-  $("ctxBtn").style.visibility = narrowing() ? "visible" : "hidden";
+  $("ctxBtn").disabled = !narrowing();
+  $("ctxBtn").title = narrowing() ? "Keep every step in its usual place and fade the ones the filters leave out" : "Turn on a filter or search first";
   $("ctxBtn").setAttribute("aria-pressed", showContext);
   renderLegend();
 }
@@ -712,11 +715,52 @@ function canvasBar() {
 
 // camera
 // A small overview map: every step as a dot in its status colour, and the visible area.
+// Links of the selected step that leave the screen get a small label at the edge.
+function edgePills() {
+  const st = $("stage"); st.querySelectorAll(".epill").forEach(x => x.remove());
+  const s = sel(); if (!s || !graph || !byId[s] || query) return;
+  const r = st.getBoundingClientRect(), c = cams.get(data.id), n = byId[s];
+  const pills = [];
+  for (const [ids, kind] of [[n.deps, "up"], [n.users, "down"]]) for (const id of ids) {
+    const p = graph.pos[id]; if (!p) continue;
+    const x = c.tx + (p.x + graph.W / 2) * c.k, y = c.ty + (p.y + graph.H / 2) * c.k;
+    if (x >= 0 && y >= 0 && x <= r.width && y <= r.height) continue;
+    pills.push({ id, kind, x, y });
+  }
+  for (const q of pills.slice(0, 12)) {
+    const b = document.createElement("button");
+    b.className = "epill " + q.kind; b.textContent = (q.kind === "up" ? "← " : "→ ") + q.id;
+    b.title = `Go to ${q.id}`;
+    b.addEventListener("pointerdown", e => { e.stopPropagation(); focusNode(q.id); });
+    st.appendChild(b);
+    // keep the whole label inside the canvas
+    const w = b.offsetWidth, h = b.offsetHeight;
+    b.style.left = Math.min(r.width - w - 8, Math.max(8, q.x - w / 2)) + "px";
+    b.style.top = Math.min(r.height - h - 8, Math.max(8, q.y - h / 2)) + "px";
+  }
+}
+// Far out, every id is drawn at a fixed 11px on screen, shortened to fit its card.
+function farIds(k) {
+  if (!graph || k >= 0.45) return;
+  const bucket = Math.round(k * 50);
+  if (graph.farBucket === bucket) return;
+  graph.farBucket = bucket;
+  const chars = Math.max(3, Math.floor((graph.W * k - 8) / (11 * 0.62)));
+  for (const id in graph.els) {
+    const t = graph.els[id].g.querySelector(".farid");
+    t.textContent = id.length <= chars ? id : id.slice(0, chars - 1) + "…";
+    t.style.fontSize = (11 / k).toFixed(1) + "px";
+  }
+}
 function drawMinimap() {
   const cv = $("stage").querySelector(".minimap canvas");
   if (!cv || !graph) return;
   const c = cams.get(data.id), r = $("stage").getBoundingClientRect();
-  const MW = 180, MH = Math.max(60, Math.min(130, MW * graph.worldH / graph.worldW));
+  const ar = graph.worldW / graph.worldH;
+  const MW = ar > 1 ? 240 : Math.max(90, Math.round(160 * ar)), MH = ar > 1 ? Math.max(48, Math.round(240 / ar)) : 160;
+  const mm = $("stage").querySelector(".minimap");
+  mm.classList.toggle("collapsed", !!prefs.miniOff);
+  mm.hidden = graph.worldW * c.k <= r.width && graph.worldH * c.k <= r.height;
   const dpr = devicePixelRatio || 1;
   cv.width = MW * dpr; cv.height = MH * dpr; cv.style.width = MW + "px"; cv.style.height = MH + "px";
   const ctx = cv.getContext("2d"), sc = Math.min(MW / graph.worldW, MH / graph.worldH);
@@ -735,7 +779,9 @@ function drawMinimap() {
 function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
-  graph.svg.classList.toggle("far", c.k < 0.4);
+  graph.svg.classList.toggle("far", c.k < 0.45);
+  edgePills();
+  farIds(c.k);
   const sr = $("stage").getBoundingClientRect();
   $("stage").classList.toggle("fits", graph.worldW * c.k <= sr.width && graph.worldH * c.k <= sr.height);
   graph.svg.style.setProperty("--inv", (1 / c.k).toFixed(3));
@@ -786,7 +832,7 @@ function frameStep(id) {
   const w = Math.max(...ps.map(p => p.x)) - Math.min(...ps.map(p => p.x)) + graph.W + 2 * M;
   const h = Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y)) + graph.H + 2 * M;
   const k = Math.min(1, r.width / w, r.height / h);
-  if (k >= 0.6 && ps.length > 1) fitNodes([id, ...n.deps, ...n.users], 0.6, 1); else focusNode(id);
+  if (k >= 0.45 && ps.length > 1) fitNodes([id, ...n.deps, ...n.users], 0.45, 1); else focusNode(id);
 }
 function fitRelated(id) {
   const n = byId[id]; if (!n) return;
@@ -865,7 +911,7 @@ function bindGraph(svg) {
       return;
     }
     const n = e.target.closest(".node");
-    if (n && e.pointerType === "mouse") showTip(n.dataset.id, e); else hideTip();
+    if (n && e.pointerType === "mouse") showTip(n.dataset.id, e, n); else hideTip();
     hoverLinks(n && e.pointerType === "mouse" ? n.dataset.id : null);
   });
   const end = e => {
@@ -899,7 +945,7 @@ function hoverLinks(id) {
 
 // tooltip
 const tip = $("tip");
-function showTip(id, e) {
+function showTip(id, e, el) {
   const n = byId[id]; if (!n) return;
   const en = entry(id);
   const bits = [`<span class="pill ${n.status}" style="height:18px">${LABEL[n.status]}</span>`, n.size && `size ${esc(n.size)}`, n.hard && `<span style="color:var(--red)">hard</span>`, `order ${n.order}`, en && en.started && n.status === "progress" && runtime(en)].filter(Boolean);
@@ -907,8 +953,10 @@ function showTip(id, e) {
   tip.innerHTML = `<div class="h">${esc(n.id)}</div><div>${esc(n.title)}</div><div class="l">${bits.join(" · ")}</div>${text ? `<div class="muted">${esc(text.length > 260 ? text.slice(0, 259) + "…" : text)}</div>` : ""}`;
   tip.style.display = "block";
   const w = tip.offsetWidth, h = tip.offsetHeight;
-  tip.style.left = Math.min(e.clientX + 14, innerWidth - w - 8) + "px";
-  tip.style.top = (e.clientY + 16 + h > innerHeight ? e.clientY - h - 12 : e.clientY + 16) + "px";
+  // Above the card when there is room, otherwise below it, so neighbours stay visible.
+  const b = el ? el.getBoundingClientRect() : { left: e.clientX, top: e.clientY, bottom: e.clientY };
+  tip.style.left = Math.max(8, Math.min(b.left, innerWidth - w - 8)) + "px";
+  tip.style.top = (b.top - h - 8 > 60 ? b.top - h - 8 : Math.min(innerHeight - h - 8, b.bottom + 8)) + "px";
 }
 function hideTip() { tip.style.display = "none"; }
 
@@ -1115,7 +1163,7 @@ function actions(n, e) {
   // VELA's CLI starts a step when you log on it, so only offer notes once it has a record.
   if (can("log") && !(data.log_starts && !data.progress[n.id])) b.push(`<button class="btn" data-act="log">Add note</button>`);
   const rec = data.progress[n.id];
-  if (can("reset") && rec && rec.state && rec.state !== "todo") b.push(`<button class="btn ghost" data-act="reset">Reset…</button>`);
+  if (can("reset") && rec && rec.state && rec.state !== "todo") b.push(`<button class="btn ghost more-act" data-act="reset" aria-label="Reset this step…" title="Reset this step…">⋯</button>`);
   if (!b.length) return "";
   const noteOnly = b.some(x => x.includes('data-act="log"'));
   return `<div class="actions"><input id="noteIn" maxlength="2000" placeholder="${noteOnly ? "Note for the log (optional, Enter adds it)" : "Note for the log (optional)"}" aria-label="Note">
@@ -1242,16 +1290,10 @@ function restatus() {
 }
 
 // -------------------------------------------------------------- controls ----
-let searchTimer = null;
 $("q").addEventListener("input", () => {
   query = $("q").value.trim();
   if (!data || !data.nodes) return;
   renderStage(); renderPanel();
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    const q = query.toLowerCase(), hits = q ? data.nodes.filter(n => matches(n, q)).map(n => n.id) : [];
-    // the filtered layout already frames the matches
-  }, 250);
 });
 $("q").addEventListener("keydown", e => {
   if (e.key === "Enter" && query && data) {

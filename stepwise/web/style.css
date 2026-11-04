@@ -213,7 +213,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .node .id { font: 650 calc(13px * var(--gs, 1)) var(--mono); fill: var(--text); }
 .node .ord { font: calc(11px * var(--gs, 1)) var(--mono); fill: var(--sub0); }
 .node .tag { font: 600 calc(11px * var(--gs, 1)) var(--mono); fill: var(--sub0); }
-.node .hard { font-size: calc(11px * var(--gs, 1)); font-weight: 700; fill: var(--red); }
+.node .hard { font-size: calc(11px * var(--gs, 1)); font-weight: 750; fill: var(--sub0); letter-spacing: .02em; }
 .node .st { font-size: calc(11.5px * var(--gs, 1)); font-weight: 700; }
 .node .farid { display: none; font: 700 26px var(--mono); fill: var(--text); }
 svg.mid .node .tt2, svg.mid .node .ord, svg.mid .node .tag { display: none; }
@@ -354,7 +354,7 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 
 /* ---------- home ---------- */
 .homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
-.cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+.cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px; align-content: start; align-items: stretch; }
 .card { background: var(--card); border: 1px solid var(--s0); border-radius: 12px; box-shadow: var(--shadow);
   padding: 16px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, transform .15s; }
@@ -369,7 +369,7 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 .big span { color: var(--sub0); }
 .stack { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--s0); }
 /* Only "done" counts as progress; in progress and ready are lighter so 0% never looks partly done. */
-.stack i:not(:first-child), .donebar .bar i:not(:first-child) { opacity: .45; }
+
 .stack i { height: 100%; }
 .counts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--sub0); }
 .counts span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
@@ -749,7 +749,7 @@ td.c-meta { display: none; }
 .lvlc { display: none; font-weight: 500; }
 svg.far .lvl { font-size: calc(12px * var(--inv, 1)); }
 svg.far .lvlc { display: inline; }
-svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: min(calc(13px * var(--inv, 1)), var(--fmax, 26px)); }
+svg.far .node.progress .farid, svg.far .node.blocked .farid { font-weight: 800; }
 /* table: titles first and readable */
 table.t td.c-title { font-size: 14px; color: var(--text); }
 table.t td { font-size: 12px; } table.t td.c-id { font-size: 12.5px; }
@@ -808,3 +808,27 @@ svg.far .edge.quiet, svg.far .edge:not(.up):not(.down):not(.crit):not(.dim) { op
 .seg button[aria-pressed="true"] { background: var(--s1); box-shadow: inset 0 0 0 1px var(--o0); color: var(--text); }
 :root[data-theme="latte"] .seg button[aria-pressed="true"] { background: var(--card); }
 .seg button[aria-pressed="false"] { color: var(--sub0); }
+
+/* graph-only controls sit at the end, so nothing moves between views */
+.graph-only { display: contents; }
+#ctxBtn:disabled { opacity: .45; cursor: default; }
+/* side panel: no text cut at the split */
+.panel { mask-image: linear-gradient(#000 calc(100% - 24px), transparent); padding-bottom: 28px; }
+.logsec .sechead { border-top: 1px solid var(--s0); background: var(--panel); }
+/* minimap */
+.minimap { right: 16px; bottom: 16px; }
+.minimap .mmtog { position: absolute; top: 2px; right: 4px; border: 0; background: none; color: var(--sub0); cursor: pointer; font-size: 12px; z-index: 1; }
+.minimap.collapsed canvas { display: none; } .minimap.collapsed { width: 34px; height: 26px; }
+.minimap.collapsed .mmtog { transform: rotate(180deg); }
+/* off-screen links */
+.epill { position: absolute; z-index: 5; border: 1px solid; border-radius: 11px; padding: 2px 8px;
+  font: 600 11px var(--mono); background: var(--card); cursor: pointer; box-shadow: var(--shadow); }
+.epill.up { color: var(--needs); border-color: var(--needs); } .epill.down { color: var(--unblocks); border-color: var(--unblocks); }
+/* hover and actions */
+.node:hover .box { stroke: var(--lavender); stroke-width: 1.5; }
+.more-act { margin-left: auto; min-width: 32px; font-size: 16px; }
+table.t td.c-check { min-width: 320px; } table.t td.c-deps { max-width: 120px; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .switch-btn .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 42vw; }
+  .panel { mask-image: none; }
+}
