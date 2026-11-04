@@ -31,6 +31,8 @@ darkQuery.addEventListener("change", () => { if (prefs.theme === "system") apply
 // ------------------------------------------------------------------- state --
 const LABEL = { done: "done", progress: "in progress", blocked: "blocked", ready: "ready", waiting: "waiting" };
 const GLYPH = { done: "✓", progress: "●", blocked: "✕", ready: "○", waiting: "" };
+// Short status words on graph nodes; the right edge always keeps room for the longest.
+const SHORT = { done: "✓ done", progress: "● active", blocked: "✕ blocked", ready: "○ ready", waiting: "" };
 // Green, blue, yellow and red mean status, so areas use the other accents.
 const AREA_COLORS = ["teal", "mauve", "pink", "sky", "flamingo", "lavender", "maroon", "sapphire", "rosewater", "peach"];
 
@@ -91,6 +93,7 @@ async function pollProjects() {
     const d = await getJSON("api/projects");
     projects = d.projects; hubOk = Date.now(); hubErr = null;
     if (!route.project) renderHome();
+    else if (!data || !data.nodes) renderProject();
     renderMenu(); renderChrome();
   } catch (e) { hubErr = e.message || "unreachable"; renderChrome(); }
 }
@@ -198,9 +201,9 @@ function renderChrome() {
       <div class="stat progress"><b>${c.progress}</b><span>in progress</span></div>
       ${c.blocked ? `<div class="stat blocked"><b>${c.blocked}</b><span>blocked</span></div>` : ""}
       <div class="stat ready"><b>${c.ready}</b><span>ready</span></div>
-      <div class="stat"><b>${c.waiting}</b><span>waiting</span></div>
+      <div class="stat waiting"><b>${c.waiting}</b><span>waiting</span></div>
       ${c.unpushed ? `<div class="stat unpushed" title="Done, but the recorded commit is not on the upstream branch yet"><b>${c.unpushed}</b><span>not pushed</span></div>` : ""}
-      ${c.retries ? `<div class="stat"><b>${c.retries}</b><span>retries</span></div>` : ""}`;
+      ${c.retries ? `<div class="stat retries"><b>${c.retries}</b><span>retries</span></div>` : ""}`;
   } else $("stats").innerHTML = "";
   // facts
   if (!home && data && data.nodes) {
@@ -289,7 +292,7 @@ function renderHome() {
     const r = p.repo;
     const sw = (col, n, l) => `<span><i class="sw" style="background:var(--${col})"></i><b>${n}</b> ${l}</span>`;
     return `<article class="card" tabindex="0" data-go="${esc(p.id)}" aria-label="Open ${esc(p.title)}">
-      <div class="top"><div><h2>${esc(p.title)}</h2><div class="where"><i class="dotp ${statusDot(p)}"></i>${esc(p.machine || p.host)}${p.error ? ` · <span style="color:var(--yellow)">stale</span>` : ""}</div></div>${i < 9 ? `<span class="kbd">${i + 1}</span>` : ""}</div>
+      <div class="top"><div><h2>${esc(p.title)}</h2><div class="where"><i class="dotp ${statusDot(p)}"></i>${esc(p.machine || p.host)}${p.error ? ` · <span style="color:var(--yellow)">stale</span>` : ""}</div></div>${i < 9 ? `<span class="kbd" title="Press ${i + 1} to open">${i + 1}</span>` : ""}</div>
       <div class="big"><b>${pct}%</b><span>${c.done} of ${c.total} steps done</span></div>
       ${stackBar(c)}
       <div class="counts">${sw("progress", c.progress, "in progress")}${c.blocked ? sw("blocked", c.blocked, "blocked") : ""}${sw("ready", c.ready, "ready")}<span><i class="sw" style="background:var(--s1)"></i><b>${c.waiting}</b> waiting</span>${c.unpushed ? sw("peach", c.unpushed, "not pushed") : ""}</div>
@@ -456,7 +459,7 @@ function wrap2(text, width, size = 11) {
 function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
-  const W = comfy ? 240 : 220, H = comfy ? 62 : 58;
+  const W = comfy ? 252 : 236, H = comfy ? 62 : 58;
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 64 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -538,16 +541,18 @@ function buildGraph(sig) {
     const ord = svgEl("text", { class: "ord", x: cx, y: 19 }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5) + 6;
     const idt = svgEl("text", { class: "id", x: cx, y: 19 }, g);
     const st = svgEl("text", { class: "st", x: W - 9, y: 19, "text-anchor": "end" }, g);
-    // fit the id, size and hard tags, leaving room for a status glyph
-    const room = W - 9 - 18 - cx;
+    // fit the id, size and hard tags, leaving room for the longest status word
+    const STATUS_ROOM = monoW("✕ unpushed", 10.5) + 8;
+    const room = W - 9 - STATUS_ROOM - cx;
     let id = n.id;
     if (monoW(id, 13) > room) { while (id.length > 3 && monoW(id + "…", 13) > room) id = id.slice(0, -1); id += "…"; }
     idt.textContent = id; cx += monoW(id, 13) + 6;
-    if (prefs.sizes && n.size && cx + monoW(n.size, 10) < W - 26) { svgEl("text", { class: "tag", x: cx, y: 19 }, g).textContent = n.size; cx += monoW(n.size, 10) + 6; }
-    if (n.hard && cx + 26 < W - 26) { svgEl("text", { class: "hard", x: cx, y: 19 }, g).textContent = "hard"; cx += 28; }
+    const limit = W - 9 - STATUS_ROOM;
+    if (prefs.sizes && n.size && cx + monoW(n.size, 10) <= limit) { svgEl("text", { class: "tag", x: cx, y: 19 }, g).textContent = n.size; cx += monoW(n.size, 10) + 6; }
+    if (n.hard && cx + 24 <= limit) { svgEl("text", { class: "hard", x: cx, y: 19 }, g).textContent = "hard"; cx += 28; }
     const [l1, l2] = wrap2(n.title, W - 24, 12);
     svgEl("text", { class: "tt", x: 14, y: comfy ? 38 : 36 }, g).textContent = l1;
-    if (l2) svgEl("text", { class: "tt", x: 14, y: comfy ? 53 : 50 }, g).textContent = l2;
+    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: comfy ? 53 : 50 }, g).textContent = l2;
     // Far zoom shows only a large id, centred.
     let big = n.id;
     while (big.length > 3 && monoW(big, 26) > W - 16) big = big.slice(0, -2) + "…";
@@ -570,9 +575,7 @@ function updateGraph() {
     const v = vis[n.id];
     e.g.setAttribute("class", `node ${n.status}${n.unpushed ? " unpushed" : ""}${n.id === s ? " sel" : ""}${v.match ? " match" : ""}${v.dim ? " dim" : ""}`);
     e.g.setAttribute("aria-label", `${n.id}: ${n.title}. ${LABEL[n.status]}${n.unpushed ? ", not pushed" : ""}.`);
-    const full = n.status === "waiting" ? "" : n.unpushed ? "✓ not pushed" : `${GLYPH[n.status]} ${LABEL[n.status]}`;
-    const fits = monoW(full, 9.5) * 0.92 <= e.statusRoom;
-    e.st.textContent = fits ? full : (n.unpushed ? "✓↑" : GLYPH[n.status]);
+    e.st.textContent = n.unpushed ? "↑ unpushed" : SHORT[n.status];
     e.st.setAttribute("class", `st st-${n.status}`);
   }
   for (const e of graph.edges) {
@@ -592,7 +595,7 @@ function renderLegend() {
   lg.hidden = !prefs.legend || !route.project || viewOf(route.project) !== "graph";
   if (lg.hidden) return;
   const sw = (fill, stroke, dash) => `<i class="sw" style="background:color-mix(in srgb, var(--${fill}) 22%, var(--base));border-color:var(--${stroke});${dash ? "border-style:dashed" : ""}"></i>`;
-  lg.innerHTML = `<span class="k">${sw("done", "done")}done</span><span class="k">${sw("done", "done", 1)}not pushed</span>
+  lg.innerHTML = `<span class="k">${sw("done", "done")}done</span><span class="k">${sw("done", "peach", 1)}not pushed</span>
     <span class="k">${sw("progress", "progress")}in progress</span><span class="k">${sw("blocked", "blocked")}blocked</span>
     <span class="k">${sw("ready", "ready")}ready</span><span class="k">${sw("s0", "s1")}waiting</span>
     <span class="k"><i class="ln" style="border-color:var(--needs)"></i>needs</span><span class="k"><i class="ln" style="border-color:var(--unblocks)"></i>unblocks</span>
@@ -603,7 +606,8 @@ function renderLegend() {
 function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
-  graph.svg.classList.toggle("far", c.k < 0.5);
+  graph.svg.classList.toggle("far", c.k < 0.4);
+  graph.svg.classList.toggle("mid", c.k >= 0.4 && c.k < 0.62);
   $("zPct").textContent = Math.round(c.k * 100) + "%";
   const dg = $("stage").querySelector(".dotgrid");
   if (dg) { dg.style.backgroundSize = `${22 * c.k}px ${22 * c.k}px`; dg.style.backgroundPosition = `${c.tx}px ${c.ty}px`; }
@@ -628,16 +632,16 @@ function initialView() {
   const s = sel();
   const active = data.nodes.filter(n => n.status === "progress").sort((a, b) => a.order - b.order)[0];
   if (s) focusNode(s);
-  else if (active) focusNode(active.id);
+  else if (active) fitNodes([active.id, ...active.deps, ...active.users], 0.65, 0.85);
 }
 // Fit the camera around some steps, for example the critical path.
-function fitNodes(ids) {
+function fitNodes(ids, floor = 0.45, ceil = 1.1) {
   const ps = ids.map(id => graph.pos[id]).filter(Boolean);
   if (!ps.length) return;
   const r = $("stage").getBoundingClientRect();
   const x0 = Math.min(...ps.map(p => p.x)) - 30, y0 = Math.min(...ps.map(p => p.y)) - 30;
   const x1 = Math.max(...ps.map(p => p.x)) + graph.W + 30, y1 = Math.max(...ps.map(p => p.y)) + graph.H + 30;
-  const k = Math.max(0.45, Math.min(1.1, r.width / (x1 - x0), r.height / (y1 - y0)));
+  const k = Math.max(floor, Math.min(ceil, r.width / (x1 - x0), r.height / (y1 - y0)));
   // Too big to fit at a readable size: start at the first step instead of centring.
   const fits = (x1 - x0) * k <= r.width && (y1 - y0) * k <= r.height;
   const p0 = graph.pos[ids[0]];
@@ -762,7 +766,8 @@ function renderOrder() {
     const state = n.status === "progress" ? `<span class="pill progress sm">${esc(since(e))}</span>` : `<span class="pill ${n.unpushed ? "unpushed" : n.status} sm">${n.unpushed ? "not pushed" : LABEL[n.status]}</span>`;
     return `<div class="orow${n.id === s ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${meta ? `<span class="muted">${meta}</span>` : ""}${state}</span></div>`;
   }).join("") || noRows();
-  $("stage").innerHTML = `<div class="list"><div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
+  const idw = Math.min(22, Math.max(4, ...data.nodes.map(n => n.id.length)));
+  $("stage").innerHTML = `<div class="list" style="--idw:${idw}ch"><div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
   keepScroll(top, s);
 }
 
@@ -826,7 +831,9 @@ function overview() {
   const by = st => data.nodes.filter(n => n.status === st).sort((a, b) => a.order - b.order);
   const prog = by("progress"), blocked = by("blocked"), ready = by("ready");
   const problems = data.problems && data.problems.length ? `<div class="errbox"><b>Plan problems</b><br>${data.problems.map(esc).join("<br>")}</div>` : "";
-  return `${problems}
+  const q = query.toLowerCase(), hits = q ? data.order.map(id => byId[id]).filter(n => matches(n, q)) : [];
+  const found = q ? `<h3 style="margin-top:2px">Matches · ${hits.length}</h3>${linkList(hits.slice(0, 20).map(n => n.id), "No step matches.")}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  return `${problems}${found}
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
     ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
     <h3 ${prog.length || blocked.length ? "" : 'style="margin-top:2px"'}>Ready to start · ${ready.length}</h3>
@@ -846,7 +853,7 @@ function detail(n) {
   const f = (() => { const walk = (start, key) => { const out = new Set(), st = [start]; while (st.length) for (const x of byId[st.pop()][key]) if (!out.has(x)) { out.add(x); st.push(x); } return out; }; return { up: walk(n.id, "deps"), down: walk(n.id, "users") }; })();
   const pills = [`<span class="pill ${s}">${GLYPH[s] || "○"} ${LABEL[s]}</span>`, n.unpushed && `<span class="pill unpushed">not pushed</span>`,
     n.hard && `<span class="pill hard">hard</span>`, crit && `<span class="pill crit">${data.critical_computed ? "longest chain" : "critical path"}</span>`].filter(Boolean).join("");
-  const cell = (v, l, t = "") => `<div title="${esc(t)}"><b>${v}</b><span>${l}</span></div>`;
+  const cell = (v, l, t = "") => `<div title="${esc(t || String(v).replace(/<[^>]*>/g, ""))}"><b>${v}</b><span>${l}</span></div>`;
   const meta = `<div class="meta">${cell("#" + n.order, "order", `${n.order} of ${data.nodes.length} in dependency order`)}${cell(n.level, "level")}${cell(esc(n.size || "–"), "size")}${cell(f.down.size, "depend on it", "steps that need this one, directly or not")}
     ${cell(runtime(e), "runtime")}${cell(e.retries ?? 0, "retries")}${cell(e.updated ? ago(e.updated) : "–", "last update", e.updated || "")}${cell(esc(e.who || "–"), "by")}</div>`;
   const hex = e.commit && /^[0-9a-f]{4,64}$/i.test(e.commit);
@@ -869,7 +876,8 @@ function detail(n) {
     ${conflict}${unmet}${check}${desc}${noCheck}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
-    <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>`;
+    <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>
+    ${stepLog(n.id)}`;
 }
 
 function actions(n, e) {
@@ -880,10 +888,13 @@ function actions(n, e) {
   const can = a => data.actions.includes(a), s = n.status, b = [];
   // Stepwise plans refuse to start or finish a step whose prerequisites are open.
   const gated = data.format === "stepwise" && n.unmet.length ? ' disabled title="Its prerequisites are not done yet"' : "";
-  if (can("start") && s !== "progress" && s !== "done") b.push(`<button class="btn primary" data-act="start"${gated}>Start</button>`);
-  if (can("done") && s !== "done") b.push(`<button class="btn good" data-act="done"${gated}>Mark done</button>`);
+  // One filled button per state: Start when ready, Mark done while active, Retry when blocked.
+  const main = s === "ready" ? "start" : s === "progress" ? "done" : s === "blocked" ? "retry" : null;
+  const cls = a => a === main ? "btn primary" : "btn";
+  if (can("start") && s !== "progress" && s !== "done") b.push(`<button class="${cls("start")}" data-act="start"${gated}>Start${s === "waiting" ? " anyway" : ""}</button>`);
+  if (can("done") && s !== "done") b.push(`<button class="${cls("done")}" data-act="done"${gated}>Mark done</button>`);
+  if (can("retry") && (s === "progress" || s === "blocked")) b.push(`<button class="${cls("retry")}" data-act="retry"${gated}>Retry</button>`);
   if (can("block") && s === "progress") b.push(`<button class="btn" data-act="block">Block</button>`);
-  if (can("retry") && (s === "progress" || s === "blocked")) b.push(`<button class="btn" data-act="retry"${gated}>Retry</button>`);
   // VELA's CLI starts a step when you log on it, so only offer notes once it has a record.
   if (can("log") && !(data.log_starts && !data.progress[n.id])) b.push(`<button class="btn" data-act="log">Add note</button>`);
   const rec = data.progress[n.id];
@@ -947,14 +958,24 @@ $("main").addEventListener("keydown", e => {
 });
 
 // ------------------------------------------------------------------- log ----
+function logRowsHtml(rows, seen) {
+  return rows.map(r => `<div class="logrow${ts(r.t) > seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(clock(r.t))}</span>
+      <div class="hd"><a data-goto="${esc(r.step)}">${esc(r.step)}</a>${kindBadge(r.kind)}${r.who ? `<span class="k">${esc(r.who)}</span>` : ""}</div><div class="m">${esc(r.msg)}</div></div>`).join("");
+}
+function stepLog(id) {
+  const rows = data.log.filter(r => r.step === id).slice(-200).reverse();
+  return `<h3>Log · ${rows.length}</h3>${rows.length ? `<div class="steplog">${logRowsHtml(rows, Infinity)}</div>` : `<div class="empty">Nothing logged for this step yet.</div>`}`;
+}
 function renderLog() {
   const box = $("logsec"), s = sel(), latest = data.log.length ? ts(data.log[data.log.length - 1].t) : 0;
+  // With a step selected, its own log sits at the end of the details, so they get the whole column.
+  box.hidden = !!s;
+  if (s) return;
   const seen = seenLog.has(data.id) ? seenLog.get(data.id) : latest;
   if (STATIC && !data.log.length) { box.innerHTML = `<div class="sechead"><h3>Running log</h3></div><div class="empty">No log in this snapshot.</div>`; return; }
   const rows = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s).slice(-200).reverse();
   box.innerHTML = `<div class="sechead"><h3>${s ? `Log · ${esc(s)}` : "Running log"}</h3><span class="muted small">${rows.length}</span>${s ? `<button class="btn ghost small" data-showall style="margin-left:auto;height:24px">All steps</button>` : ""}</div>` +
-    (rows.map(r => `<div class="logrow${ts(r.t) > seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(clock(r.t))}</span>
-      <div class="hd"><a data-goto="${esc(r.step)}">${esc(r.step)}</a>${kindBadge(r.kind)}${r.who ? `<span class="k">${esc(r.who)}</span>` : ""}</div><div class="m">${esc(r.msg)}</div></div>`).join("")
+    (logRowsHtml(rows, seen)
       || `<div class="empty">${s ? "Nothing logged for this step yet." : "No entries yet. Agents add them with the project's CLI."}</div>`);
   seenLog.set(data.id, Math.max(seen, latest || 0));
 }
@@ -985,7 +1006,17 @@ function restatus() {
 }
 
 // -------------------------------------------------------------- controls ----
-$("q").addEventListener("input", () => { query = $("q").value.trim(); if (data && data.nodes) { renderStage(); } });
+let searchTimer = null;
+$("q").addEventListener("input", () => {
+  query = $("q").value.trim();
+  if (!data || !data.nodes) return;
+  renderStage(); renderPanel();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    const q = query.toLowerCase(), hits = q ? data.nodes.filter(n => matches(n, q)).map(n => n.id) : [];
+    if (graph && hits.length && hits.length <= 20) fitNodes(hits, 0.62, 1);
+  }, 250);
+});
 $("q").addEventListener("keydown", e => {
   if (e.key === "Enter" && query && data) {
     const q = query.toLowerCase();
@@ -997,7 +1028,11 @@ $("q").addEventListener("keydown", e => {
 $("toolbar").addEventListener("click", e => {
   if (!data || !data.nodes) return;
   const v = e.target.closest("[data-view]");
-  if (v) { prefs.view[data.id] = v.dataset.view; savePrefs(); return renderProject(); }
+  if (v) {
+    prefs.view[data.id] = v.dataset.view; savePrefs();
+    if (matchMedia("(max-width: 900px)").matches && sel()) return selectStep(null);
+    return renderProject();
+  }
   const f = e.target.closest("[data-filter]");
   if (f) {
     filter = f.dataset.filter || null;
@@ -1059,28 +1094,34 @@ $("prefsBtn").onclick = e => {
 };
 function renderPrefs() {
   const p = route.project && data && data.nodes;
-  const opt = (v, cur, l) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`;
+  // Segmented choices and switches, matching the toolbar.
+  const seg = (key, cur, opts) => `<div class="seg pseg" role="group" data-pref="${key}">${opts.map(([v, l]) => `<button data-v="${v}" aria-pressed="${v === cur}">${l}</button>`).join("")}</div>`;
+  const sw = (key, on, label) => `<label class="row"><span>${label}</span><input type="checkbox" class="switch" data-pref="${key}"${on ? " checked" : ""}></label>`;
   $("prefs").innerHTML = `<h3>Appearance</h3>
-    <div class="row"><label for="pTheme">Theme</label><select id="pTheme">${opt("system", prefs.theme, "System")}${opt("macchiato", prefs.theme, "Macchiato (dark)")}${opt("latte", prefs.theme, "Latte (light)")}</select></div>
-    <div class="row"><label for="pDensity">Density</label><select id="pDensity">${opt("compact", prefs.density, "Compact")}${opt("comfortable", prefs.density, "Comfortable")}</select></div>
-    <div class="row"><label for="pText">Text size</label><input id="pText" type="range" min="90" max="125" step="5" value="${prefs.text}"></div>
-    <div class="row"><label for="pSizes">Show size estimates</label><input id="pSizes" type="checkbox"${prefs.sizes ? " checked" : ""}></div>
-    <div class="row"><label for="pLegend">Show legend</label><input id="pLegend" type="checkbox"${prefs.legend ? " checked" : ""}></div>
-    ${p ? `<h3>This project</h3>
-    <div class="row"><label for="pDir">Graph direction</label><select id="pDir">${opt("TB", dirOf(data.id), "Top to bottom")}${opt("LR", dirOf(data.id), "Left to right")}</select></div>
-    <div class="row"><label for="pEdges">On select, highlight</label><select id="pEdges">${opt("all", edgesOf(data.id), "Whole chain")}${opt("direct", edgesOf(data.id), "Direct links")}</select></div>` : ""}
-    <h3>Keys</h3><div class="keys"><span class="kbd">/</span>find a step<span class="kbd">0–9</span>switch project<span class="kbd">g o t</span>graph, order, table
-      <span class="kbd">f</span>fit everything<span class="kbd">c</span>critical path<span class="kbd">e</span>direct edges<span class="kbd">d</span>direction<span class="kbd">Esc</span>clear selection</div>
-    <div class="btns"><button class="btn ghost" id="pReset">Reset view settings</button></div>`;
-  const on = (id, ev, fn) => $(id) && $(id).addEventListener(ev, fn);
-  on("pTheme", "change", e => { prefs.theme = e.target.value; savePrefs(); applyPrefs(); });
-  on("pDensity", "change", e => { prefs.density = e.target.value; savePrefs(); applyPrefs(); rerenderGraph(); });
-  on("pText", "input", e => { prefs.text = +e.target.value; savePrefs(); applyPrefs(); });
-  on("pSizes", "change", e => { prefs.sizes = e.target.checked; savePrefs(); rerenderGraph(); });
-  on("pLegend", "change", e => { prefs.legend = e.target.checked; savePrefs(); if (graph) renderLegend(); });
-  on("pDir", "change", e => { prefs.dir[data.id] = e.target.value; savePrefs(); rerenderGraph(); });
-  on("pEdges", "change", e => { prefs.edges[data.id] = e.target.value; savePrefs(); renderProject(); });
-  on("pReset", "click", () => { prefs = { ...DEFAULTS, dir: {}, edges: {}, view: {} }; savePrefs(); applyPrefs(); renderPrefs(); rerenderGraph(); });
+    <div class="prow"><span>Theme</span>${seg("theme", prefs.theme, [["system", "Auto"], ["latte", "Latte"], ["macchiato", "Macchiato"]])}</div>
+    <div class="prow"><span>Density</span>${seg("density", prefs.density, [["compact", "Compact"], ["comfortable", "Comfy"]])}</div>
+    <div class="prow"><span>Text size</span><input id="pText" type="range" min="90" max="125" step="5" value="${prefs.text}" aria-label="Text size"></div>
+    ${sw("sizes", prefs.sizes, "Size estimates on steps")}
+    ${sw("legend", prefs.legend, "Legend in the status bar")}
+    ${p ? `<h3>${esc(data.title)}</h3>
+    <div class="prow"><span>Direction</span>${seg("dir", dirOf(data.id), [["TB", "Top ↓"], ["LR", "Left →"]])}</div>
+    <div class="prow"><span>On select</span>${seg("edges", edgesOf(data.id), [["all", "Whole chain"], ["direct", "Direct"]])}</div>` : ""}
+    <h3>Keys</h3><div class="keys">${[["/", "Find a step"], ["0–9", "Switch project"], ["g o t", "Graph, order, table"], ["f", "Fit everything"], ["c", "Critical path"], ["e", "Direct edges"], ["d", "Direction"], ["Esc", "Clear selection"]]
+      .map(([k, l]) => `<span>${l}</span><span class="kbd">${k}</span>`).join("")}</div>
+    <div class="btns"><button class="btn ghost small" id="pReset">Reset view settings</button></div>`;
+  $("prefs").querySelectorAll(".pseg").forEach(g => g.addEventListener("click", e => {
+    const b = e.target.closest("button[data-v]"); if (!b) return;
+    const key = g.dataset.pref, v = b.dataset.v;
+    if (key === "dir") prefs.dir[data.id] = v; else if (key === "edges") prefs.edges[data.id] = v; else prefs[key] = v;
+    savePrefs(); applyPrefs(); renderPrefs();
+    if (key === "dir" || key === "density") rerenderGraph(); else if (key === "edges") renderProject();
+  }));
+  $("prefs").querySelectorAll("input.switch").forEach(i => i.addEventListener("change", () => {
+    prefs[i.dataset.pref] = i.checked; savePrefs();
+    if (i.dataset.pref === "sizes") rerenderGraph(); else renderLegend();
+  }));
+  $("pText").addEventListener("input", e => { prefs.text = +e.target.value; savePrefs(); applyPrefs(); });
+  $("pReset").addEventListener("click", () => { prefs = { ...DEFAULTS, dir: {}, edges: {}, view: {} }; savePrefs(); applyPrefs(); renderPrefs(); rerenderGraph(); });
 }
 function rerenderGraph() { graph = null; if (route.project && data && data.nodes) renderProject(); }
 
