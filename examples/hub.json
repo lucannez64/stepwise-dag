@@ -1,0 +1,4 @@
+{"projects": [
+  {"id": "demo", "title": "Stepwise example", "format": "stepwise",
+   "plan": "plan.json", "state": "../.stepwise/state.json", "direction": "TB"}
+]}

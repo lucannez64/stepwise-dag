@@ -7,6 +7,9 @@ from .store import read, atomic, update
 
 
 def main():
+    if sys.argv[1:2] == ['hub']:
+        from .hub import main as hub_main
+        return hub_main(sys.argv[2:])
     p = argparse.ArgumentParser(description='Dependency-first plans and live progress')
     p.add_argument('--plan', default='plan.json')
     p.add_argument('--state', default='.stepwise/state.json')
@@ -64,19 +67,18 @@ def main():
         elif a.command == 'list':
             for n in derive(plan, read(a.state)['steps'])['nodes']:
                 print(f"{n['order']:3} {n['kind']:12} {n['id']:24} {n['title']}" + (' [unfinished prerequisites]' if n['inconsistent'] else ''))
-        elif a.command == 'serve':
-            from .server import serve
-            serve(Path(a.plan).resolve(), Path(a.state).resolve(), a.port, a.repo)
-        elif a.command == 'export':
-            from .server import snapshot
-            web = Path(__file__).parent / 'web'
-            data = snapshot(Path(a.plan), Path(a.state))
-            payload = json.dumps(data).replace('<', '\\u003c').replace('>', '\\u003e').replace('&', '\\u0026')
-            page = (web / 'index.html').read_text().replace('<link rel="stylesheet" href="/style.css">', '<style>' + (web / 'style.css').read_text() + '</style>')
-            page = page.replace('<script src="/app.js" defer></script>', '')
-            page = page.replace('</body>', '<script>window.SNAPSHOT=' + payload + ';</script><script>' + (web / 'app.js').read_text() + '</script></body>')
-            Path(a.output).write_text(page)
-            print(a.output)
+        elif a.command in ('serve', 'export'):
+            from . import hub
+            project = dict(id='plan', title=plan['title'], format='stepwise', plan=str(Path(a.plan).resolve()),
+                           state=str(Path(a.state).resolve()), direction='TB')
+            if getattr(a, 'repo', None):
+                project['repo'] = str(Path(a.repo).resolve())
+            cfg = {'projects': [project]}
+            if a.command == 'serve':
+                hub.serve(cfg, Path.cwd(), a.port, ['127.0.0.1'])
+            else:
+                hub.export(cfg, Path.cwd(), 'plan', a.output)
+                print(a.output)
         else:
             update(a.state, plan, a.command, a.id, a.message, a.who, a.commit, a.force)
     except (ValueError, OSError, KeyError) as exc:

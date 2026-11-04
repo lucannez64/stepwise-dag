@@ -1,5 +1,78 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Stepwise plan</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
-<body><header><div class="toolbar"><h1 id="title">Plan</h1><div id="summary" aria-label="Progress summary"></div><input id="search" aria-label="Find a node" type="search" placeholder="Find a node"><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button id="fit">Fit all</button><button id="readable">Readable</button><button id="progress-only">In progress</button><button id="direct" aria-pressed="true">Direct edges</button><button id="list-view" aria-pressed="false">Order</button><button id="settings-toggle">Customize</button><span id="connection" role="status"></span></div><div class="legend"><span class="tag done">● completed</span><span class="tag unpushed">◌ completed, not pushed</span><span class="tag in_progress">◐ in progress</span><span class="tag ready">○ ready to start</span><span class="tag waiting">○ waiting</span><span class="tag blocked">● blocked</span><span id="repo"></span></div></header>
-<section id="settings" hidden aria-label="Interface preferences"><label>Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><label>Density <select id="density"><option value="compact">Compact</option><option value="comfortable">Comfortable</option></select></label><label>Direction <select id="direction"><option value="vertical">Top to bottom</option><option value="horizontal">Left to right</option></select></label><label>Text <input id="font" type="range" min="11" max="16" value="13"></label><label>Panel <input id="panel" type="range" min="260" max="520" value="360"></label><label><input type="checkbox" id="show-size" checked> Estimates</label><label>Show <select id="filter"><option value="all">All steps</option><option value="ready">Ready</option><option value="in_progress">In progress</option><option value="blocked">Blocked</option><option value="done">Done</option><option value="inconsistent">Prerequisite conflicts</option></select></label><label>Area <select id="area"><option value="">All areas</option></select></label><button id="chain">Longest chain</button><button id="reset-prefs">Reset preferences</button></section>
-<main><section id="viewport" aria-label="Dependency graph"><div id="world"><svg id="edges" aria-hidden="true"></svg><div id="nodes"></div></div></section><aside><section id="detail"></section><section id="activity-panel"><h2 id="activity-title">Running log</h2><div id="activity"></div><div id="order" hidden></div></section></aside></main><div id="error" role="alert" hidden></div></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Stepwise</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script>
+  /* Apply the saved theme before first paint. */
+  (function () {
+    var t = "system";
+    try { t = JSON.parse(localStorage.getItem("stepwise.hub.v1") || "{}").theme || "system"; } catch (e) {}
+    if (t === "system") t = matchMedia("(prefers-color-scheme: dark)").matches ? "macchiato" : "latte";
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar" id="topbar">
+    <a class="brand" href="#/" title="All projects (0)" aria-label="All projects">
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6.5v4.5a3 3 0 0 0 3 3h6M6 11v6.5M18 14v3.5" opacity=".55"/><rect x="3" y="3" width="6" height="4" rx="1.2" fill="var(--green)" stroke="none"/><rect x="3" y="17" width="6" height="4" rx="1.2" fill="var(--blue)" stroke="none"/><rect x="15" y="12" width="6" height="4" rx="1.2" fill="var(--yellow)" stroke="none"/><rect x="15" y="18.5" width="6" height="3" rx="1" fill="var(--o0)" stroke="none"/></g></svg>
+      <span>Stepwise</span>
+    </a>
+    <div class="switcher" id="switcher">
+      <button class="switch-btn" id="switchBtn" aria-haspopup="menu" aria-expanded="false">
+        <i class="dotp" id="switchDot"></i><span class="name" id="switchName">All projects</span>
+        <svg class="chev" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <div class="menu" id="menu" role="menu" hidden></div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div class="spacer"></div>
+    <div class="facts" id="facts"></div>
+    <span class="live" id="live"><i></i><span id="liveT">connecting</span></span>
+    <button class="iconbtn" id="prefsBtn" aria-label="View settings" aria-expanded="false" title="View settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></g></svg>
+    </button>
+  </header>
+  <div class="banner" id="banner" hidden></div>
+  <div class="toolbar" id="toolbar" hidden>
+    <label class="search">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <input id="q" type="search" placeholder="Find a step" aria-label="Find a step by id, title or check" autocomplete="off" spellcheck="false">
+      <span class="kbd" id="qKbd">/</span><span class="count" id="qCount" hidden></span>
+    </label>
+    <div class="seg" role="group" aria-label="View">
+      <button data-view="graph" aria-pressed="true" title="Graph (g)">Graph</button>
+      <button data-view="order" aria-pressed="false" title="Build order (o)">Order</button>
+      <button data-view="table" aria-pressed="false" title="Table (t)">Table</button>
+    </div>
+    <span class="vsep"></span>
+    <button class="tog" data-filter="progress" aria-pressed="false" title="Only steps in progress"><i class="sw" style="background:var(--progress)"></i>In progress <span class="n" id="nProg"></span></button>
+    <button class="tog" data-filter="ready" aria-pressed="false" title="Only steps whose prerequisites are done"><i class="sw" style="background:var(--ready)"></i>Ready <span class="n" id="nReady"></span></button>
+    <button class="tog" data-filter="blocked" aria-pressed="false" id="fBlocked" hidden><i class="sw" style="background:var(--blocked)"></i>Blocked <span class="n" id="nBlocked"></span></button>
+    <button class="tog" id="critBtn" aria-pressed="false" title="Longest dependency chain (c)"><i class="sw" style="background:var(--crit)"></i>Critical path</button>
+    <button class="tog" id="edgeBtn" aria-pressed="false" title="When a step is selected, highlight only its direct links (e)">Direct edges</button>
+    <span class="vsep"></span>
+    <div class="areas" id="areas" aria-label="Areas"></div>
+    <div class="zoom" id="zoomCtl">
+      <button id="zOut" aria-label="Zoom out" title="Zoom out (−)">−</button>
+      <button class="pct" id="zPct" title="Fit everything (f)">100%</button>
+      <button id="zIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
+    </div>
+    <button class="iconbtn" id="dirBtn" title="Graph direction (d)" aria-label="Switch graph direction"></button>
+  </div>
+  <main id="main"></main>
+</div>
+<div class="pop" id="prefs" hidden></div>
+<div id="tip" role="tooltip"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<dialog id="confirm"><h2 id="cTitle"></h2><div id="cBody" class="muted"></div>
+  <div class="btns"><button class="btn" value="no" id="cNo">Cancel</button><button class="btn bad" id="cYes">Reset</button></div></dialog>
+<script src="app.js"></script>
+</body>
+</html>

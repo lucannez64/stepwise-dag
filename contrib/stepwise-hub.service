@@ -1,0 +1,14 @@
+# Run the hub at login: copy to ~/.config/systemd/user/ and run
+#   systemctl --user daemon-reload && systemctl --user enable --now stepwise-hub
+[Unit]
+Description=Stepwise plan hub
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Projets/stepwise-dag
+ExecStart=/usr/bin/python3 -m stepwise hub --tailscale
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
