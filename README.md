@@ -38,7 +38,7 @@ Each project in `hub.json` says where its plan is and how to change it:
 | Key | Meaning |
 | --- | --- |
 | `format` | `vela`, `kush`, or `stepwise` (this repo's own plan and state files). |
-| `host` | SSH destination that holds the project. Leave it out for this machine. The hub keeps one shared SSH connection per host. |
+| `host` | SSH destination that holds the project, or a list of routes to the same machine tried in order (LAN address, then Tailscale name). Leave it out for this machine. The hub keeps one shared SSH connection per route and reconnects after a network drop. |
 | `plan`, `state`, `repo` | Paths on that machine. `~` works. `repo` adds branch, ahead count, worktrees and "not pushed" marks. |
 | `cli` | The project's own plan CLI. Dashboard buttons run it, so agents and the dashboard write the same file the same way. Leave it out to make the project read-only. |
 | `env` | Extra environment variables for the CLI. |

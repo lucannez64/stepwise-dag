@@ -395,7 +395,9 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .search input { width: 150px; }
   .areas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .chiprow .lbl { display: none; }
-  .zoom, #dirBtn, #edgeBtn { display: none; }
+  #zIn, #zOut, #dirBtn, #edgeBtn { display: none; }
+  #main { grid-row: auto; }
+  .facts { padding-right: 12px; }
   .work { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
   .resizer { display: none; }
   .side { grid-template-rows: auto auto; }

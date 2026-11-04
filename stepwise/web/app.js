@@ -106,7 +106,7 @@ async function pollProject() {
 }
 
 function setData(d) {
-  const sig = JSON.stringify([d.mtime, d.counts, d.progress, d.log.length, d.error, d.repo, d.problems, d.nodes && d.nodes.length]);
+  const sig = JSON.stringify([d.mtime, d.counts, d.progress, d.log && d.log.length, d.error, d.repo, d.problems, d.nodes && d.nodes.length]);
   const changed = !data || data.id !== d.id || sig !== data._sig;
   d._sig = sig;
   data = d;
@@ -256,7 +256,7 @@ document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, 
 function renderHome() {
   renderChrome();
   const main = $("main");
-  if (!main.querySelector(".homegrid")) main.innerHTML = `<div class="homegrid"><div class="cards" id="cards"></div><aside class="feed" id="feed"></aside></div>`;
+  if (!$("cards") || !$("feed")) main.innerHTML = `<div class="homegrid"><div class="cards" id="cards"></div><aside class="feed" id="feed"></aside></div>`;
   if (!projects.length) { $("cards").innerHTML = `<div class="empty">${hubErr ? "Cannot reach the hub: " + esc(hubErr) : "Loading projects…"}</div>`; $("feed").innerHTML = ""; return; }
   $("cards").innerHTML = projects.map((p, i) => {
     const c = p.counts;
@@ -761,7 +761,11 @@ function detail(n) {
   const cell = (v, l, t = "") => `<div title="${esc(t)}"><b>${v}</b><span>${l}</span></div>`;
   const meta = `<div class="meta">${cell("#" + n.order, "order", `${n.order} of ${data.nodes.length} in dependency order`)}${cell(n.level, "level")}${cell(esc(n.size || "–"), "size")}${cell(f.down.size, "depend on it", "steps that need this one, directly or not")}
     ${cell(runtime(e), "runtime")}${cell(e.retries ?? 0, "retries")}${cell(e.updated ? ago(e.updated) : "–", "last update", e.updated || "")}${cell(esc(e.who || "–"), "by")}</div>`;
-  const commit = e.commit ? `<div class="commit">commit <code>${esc(String(e.commit).slice(0, 10))}</code> · ${n.unpushed ? `<span style="color:var(--peach)">not on ${esc((data.repo || {}).upstream || "upstream")} yet</span>` : data.repo && data.repo.pushed && e.commit in data.repo.pushed ? "pushed" : "push state unknown"}</div>` : "";
+  const hex = e.commit && /^[0-9a-f]{4,64}$/i.test(e.commit);
+  const pushState = !hex || !data.repo ? "" : n.unpushed ? ` · <span style="color:var(--peach)">not on ${esc(data.repo.upstream || "upstream")} yet</span>`
+    : e.commit in (data.repo.pushed || {}) ? " · pushed" : " · not found in this clone";
+  const commit = e.commit ? `<div class="commit">commit <code>${esc(String(e.commit).slice(0, 10))}</code>${pushState}</div>` : "";
+  const conflict = s === "done" && n.unmet.length ? `<div class="warnbox">Marked done while ${n.unmet.length} prerequisite${n.unmet.length > 1 ? "s are" : " is"} not done: ${n.unmet.map(id => `<a data-goto="${esc(id)}" href="javascript:void 0">${esc(id)}</a>`).join(", ")}.</div>` : "";
   const unmet = s !== "done" && n.unmet.length ? `<div class="warnbox">Waiting on ${n.unmet.length} prerequisite${n.unmet.length > 1 ? "s" : ""}: ${n.unmet.map(id => `<a data-goto="${esc(id)}" href="javascript:void 0">${esc(id)}</a>`).join(", ")}. ${f.up.size} steps upstream in total.</div>` : "";
   const check = n.check ? `<h3>Done when</h3><div class="check">${esc(n.check)}</div>` : "";
   const desc = n.desc ? `<h3>${n.check ? "Notes" : "Description"}</h3><div class="check">${esc(n.desc)}</div>` : "";
@@ -773,7 +777,7 @@ function detail(n) {
     ${meta}
     ${e.note && e.note !== n.check ? `<div class="note">${esc(e.note)}</div>` : ""}${commit}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
-    ${unmet}${check}${desc}${noCheck}
+    ${conflict}${unmet}${check}${desc}${noCheck}
     ${actions(n, e)}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
@@ -786,13 +790,16 @@ function actions(n, e) {
     return n.status === "done" && !local ? "" : `<div class="actions"><div class="btns" style="margin:0"><button class="btn" data-local>${local ? "Mark not done" : "Mark done"}</button><span class="muted small" style="align-self:center">Saved in this browser only</span></div></div>`;
   }
   const can = a => data.actions.includes(a), s = n.status, b = [];
-  if (can("start") && s !== "progress" && s !== "done") b.push(`<button class="btn primary" data-act="start">Start</button>`);
-  if (can("done") && s !== "done") b.push(`<button class="btn good" data-act="done">Mark done</button>`);
+  // Stepwise plans refuse to start or finish a step whose prerequisites are open.
+  const gated = data.format === "stepwise" && n.unmet.length ? ' disabled title="Its prerequisites are not done yet"' : "";
+  if (can("start") && s !== "progress" && s !== "done") b.push(`<button class="btn primary" data-act="start"${gated}>Start</button>`);
+  if (can("done") && s !== "done") b.push(`<button class="btn good" data-act="done"${gated}>Mark done</button>`);
   if (can("block") && s === "progress") b.push(`<button class="btn" data-act="block">Block</button>`);
-  if (can("retry") && (s === "progress" || s === "blocked")) b.push(`<button class="btn" data-act="retry">Retry</button>`);
+  if (can("retry") && (s === "progress" || s === "blocked")) b.push(`<button class="btn" data-act="retry"${gated}>Retry</button>`);
   // VELA's CLI starts a step when you log on it, so only offer notes once it has a record.
   if (can("log") && !(data.log_starts && !data.progress[n.id])) b.push(`<button class="btn" data-act="log">Add note</button>`);
-  if (can("reset") && data.progress[n.id]) b.push(`<button class="btn ghost" data-act="reset">Reset…</button>`);
+  const rec = data.progress[n.id];
+  if (can("reset") && rec && rec.state && rec.state !== "todo") b.push(`<button class="btn ghost" data-act="reset">Reset…</button>`);
   if (!b.length) return "";
   const noteOnly = b.some(x => x.includes('data-act="log"'));
   return `<div class="actions"><input id="noteIn" maxlength="2000" placeholder="${noteOnly ? "Note for the log (optional, Enter adds it)" : "Note for the log (optional)"}" aria-label="Note">
@@ -818,7 +825,7 @@ async function act(action) {
     setData(body);
     toast({ start: `${id} started`, done: `${id} marked done`, block: `${id} blocked`, retry: `${id} retried`, log: "Note added", reset: `${id} reset` }[action]);
   } catch (err) { toast("Could not save: " + err.message, true); }
-  finally { busy = false; document.querySelectorAll("[data-act]").forEach(b => b.disabled = false); }
+  finally { busy = false; renderPanel(); }
 }
 function confirmReset(id) {
   return new Promise(resolve => {
@@ -898,12 +905,14 @@ $("q").addEventListener("keydown", e => {
   if (e.key === "Escape") { $("q").value = query = ""; renderStage(); $("q").blur(); }
 });
 $("toolbar").addEventListener("click", e => {
+  if (!data || !data.nodes) return;
   const v = e.target.closest("[data-view]");
   if (v) { prefs.view[data.id] = v.dataset.view; savePrefs(); return renderProject(); }
   const f = e.target.closest("[data-filter]");
   if (f) { filter = filter === f.dataset.filter ? null : f.dataset.filter; return renderProject(); }
 });
 $("chiprow").addEventListener("click", e => {
+  if (!data || !data.nodes) return;
   const a = e.target.closest("[data-area]");
   if (a) {
     const off = offAreas(), k = a.dataset.area;

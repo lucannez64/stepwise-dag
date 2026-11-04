@@ -20,7 +20,8 @@ Config (default ~/.config/stepwise/hub.json):
        "state": ".stepwise/state.json"}
     ]}
 
-`host` is an SSH destination; leave it out for this machine. `env` adds
+`host` is an SSH destination (or a list of routes to the same machine,
+tried in order); leave it out for this machine. `env` adds
 environment variables to CLI writes. `box` is a second machine whose load is
 shown next to the project's own.
 """
@@ -123,6 +124,15 @@ def kush_time(s):
         return s or ""
 
 
+def when(t):
+    """Sort key for timestamps written with different offsets or none."""
+    try:
+        d = dt.datetime.fromisoformat(t.replace(" ", "T"))
+        return (d if d.tzinfo else d.astimezone()).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def normalize(fmt, raw):
     """Turn one format's plan and progress into the shared shape."""
     plan, state = raw["plan"], raw.get("state") or {}
@@ -131,7 +141,7 @@ def normalize(fmt, raw):
         node = {
             "id": str(n["id"]), "title": str(n.get("title") or n["id"]),
             "area": str(n.get("area") or ""), "size": str(n.get("size") or ""),
-            "hard": bool(n.get("hard")), "deps": [str(d) for d in n.get("deps") or []],
+            "hard": bool(n.get("hard")), "deps": list(dict.fromkeys(str(d) for d in n.get("deps") or [])),
             "check": str((n.get("done") if fmt == "vela" else n.get("exit_check")) or ""),
             "desc": str(n.get("desc") or n.get("description") or ""),
         }
@@ -145,12 +155,13 @@ def normalize(fmt, raw):
                 log.append({"t": kush_time(e.get("time")), "step": node["id"], "kind": "",
                             "who": str(e.get("who") or ""), "msg": str(e.get("text") or "")})
             status = n.get("status") or "todo"
-            if status != "todo" or n.get("commit"):
-                last = entries[-1] if entries else {}
+            last = entries[-1] if entries else {}
+            if status != "todo" or entries:
+                todo = status == "todo"  # a reset step keeps its history, not its old note or commit
                 progress[node["id"]] = {
-                    "state": status, "commit": n.get("commit") or "",
+                    "state": status, "commit": "" if todo else str(n.get("commit") or "").strip(),
                     "updated": kush_time(last.get("time")) if last else "",
-                    "who": str(last.get("who") or ""), "note": str(last.get("text") or ""),
+                    "who": str(last.get("who") or ""), "note": "" if todo else str(last.get("text") or ""),
                     "retries": int(n.get("retries") or 0),
                 }
     if fmt == "kush":
@@ -164,12 +175,14 @@ def normalize(fmt, raw):
             if isinstance(e, dict):
                 progress[str(sid)] = {k: e.get(k) for k in
                                       ("state", "started", "finished", "updated", "who", "retries", "note", "commit")}
+                if isinstance(progress[str(sid)]["commit"], str):
+                    progress[str(sid)]["commit"] = progress[str(sid)]["commit"].strip()
         for e in state.get("log") or []:
             if isinstance(e, dict):
                 log.append({"t": str(e.get("t") or ""), "step": str(e.get("step") or ""),
                             "kind": str(e.get("kind") or ""), "who": str(e.get("who") or ""),
                             "msg": str(e.get("msg") or "")})
-    log.sort(key=lambda e: e["t"])
+    log.sort(key=lambda e: when(e["t"]))
     title = plan.get("title")
     return {"nodes": nodes, "progress": progress, "log": log[-LOG_KEEP:], "areas": areas,
             "critical": [str(x) for x in plan.get("critical_path") or []], "plan_title": title}
@@ -196,7 +209,8 @@ def derive(data, repo):
         if i in depth:
             return depth[i]
         if i in visiting:
-            raise ValueError(f"dependency cycle through {i}")
+            problems.append(f"dependency cycle through {i}")
+            return 0
         visiting.add(i)
         deps = by[i]["deps"]
         depth[i] = 1 + max(map(node_depth, deps)) if deps else 0
@@ -206,10 +220,11 @@ def derive(data, repo):
     try:
         for n in nodes:
             node_depth(n["id"])
-    except (ValueError, RecursionError) as exc:
-        problems.append(str(exc))
-        for n in nodes:
-            depth.setdefault(n["id"], 0)
+    except RecursionError:
+        problems.append("plan too deep to lay out")
+    for n in nodes:
+        depth.setdefault(n["id"], 0)
+    problems[:] = list(dict.fromkeys(problems))
 
     progress = data["progress"]
     pushed = (repo or {}).get("pushed") or {}
@@ -280,7 +295,10 @@ class Project:
         self.fmt = cfg.get("format", "stepwise")
         if self.fmt not in FORMATS:
             raise SystemExit(f"{self.id}: unknown format {self.fmt}")
-        self.host = cfg.get("host") or None
+        # host may list several routes to the same machine, e.g. LAN address then Tailscale name.
+        hosts = cfg.get("host") or []
+        self.hosts = [hosts] if isinstance(hosts, str) else list(hosts)
+        self.host = self.hosts[0] if self.hosts else None
         if self.fmt == "stepwise" and self.host:
             raise SystemExit(f"{self.id}: stepwise-format projects must be local")
         self.title = cfg.get("title") or self.id
@@ -303,6 +321,13 @@ class Project:
     def probe(self):
         req = json.dumps({"plan": self.path("plan"), "state": self.path("state"), "repo": self.path("repo")})
         code, out, err = run(self.host, ["python3", "-I", "-", req], stdin=PROBE, timeout=15)
+        if code in (124, 255) and len(self.hosts) > 1:
+            # This route failed: try the others, and keep the first that answers.
+            for other in [h for h in self.hosts if h != self.host]:
+                code, out, err = run(other, ["python3", "-I", "-", req], stdin=PROBE, timeout=15)
+                if code not in (124, 255):
+                    self.host = other
+                    break
         if code != 0:
             raise RuntimeError((err or out or f"exit {code}").strip().splitlines()[-1][:300])
         raw = json.loads(out)
@@ -316,7 +341,8 @@ class Project:
             machine=raw.get("hostname"), load=raw.get("load"), repo=raw.get("repo"),
             mtime=raw.get("mtime"), actions=list(FORMATS[self.fmt]),
             log_starts=self.fmt == "vela",  # VELA's CLI starts a step when you log on it
-            direction=self.cfg.get("direction", "TB"), edges=self.cfg.get("edges", "all"),
+            direction=self.cfg.get("direction", "LR" if self.fmt == "vela" else "TB"),
+            edges=self.cfg.get("edges", "direct" if self.fmt == "kush" else "all"),
             box_host=self.cfg.get("box"),
         )
         return data
@@ -374,7 +400,12 @@ class Project:
         cli = self.cfg.get("cli")
         if action not in FORMATS[self.fmt]:
             raise ValueError(f"{self.fmt} plans do not support {action}")
-        snap = self.snapshot
+        with self.lock:
+            snap = self.snapshot
+        if snap is None:
+            self.refresh()
+            with self.lock:
+                snap = self.snapshot
         if not snap or sid not in {n["id"] for n in snap["nodes"]}:
             raise ValueError(f"unknown step {sid}")
         msg = " ".join(str(msg or "").split())[:MAX_MSG]
@@ -432,7 +463,7 @@ def page(static=None):
         return html
     css = (WEB / "style.css").read_text()
     js = (WEB / "app.js").read_text()
-    blob = json.dumps(static).replace("</", "<\\/")
+    blob = json.dumps(static).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     html = html.replace('<link rel="stylesheet" href="style.css">', f"<style>{css}</style>")
     icon = "data:image/svg+xml;base64," + base64.b64encode((WEB / "favicon.svg").read_bytes()).decode()
     html = html.replace('href="favicon.svg"', f'href="{icon}"')
@@ -464,7 +495,7 @@ def export(cfg, base, project_id, output):
 def serve(cfg, base, port, hosts, names=()):
     projects = load_projects(cfg, base)
     by = {p.id: p for p in projects}
-    boxes = Boxes(p.cfg["box"] for p in projects if p.cfg.get("box"))
+    boxes = Boxes(p.cfg["box"] for p in projects if isinstance(p.cfg.get("box"), str))
     for p in projects:
         threading.Thread(target=p.loop, daemon=True).start()
     allowed_hosts = set()

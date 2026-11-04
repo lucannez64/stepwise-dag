@@ -69,6 +69,37 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(len(d["order"]), 3)
 
 
+class ReviewRegressionTests(unittest.TestCase):
+    def test_a_cycle_does_not_flatten_the_rest(self):
+        raw = {"plan": {"nodes": [{"id": "A", "deps": ["B"]}, {"id": "B", "deps": ["A"]}, {"id": "C", "deps": []},
+                                  {"id": "D", "deps": ["C"]}, {"id": "E", "deps": ["D"]}]}, "state": {}}
+        d = hub.derive(hub.normalize("stepwise", raw), None)
+        self.assertEqual([n["level"] for n in d["nodes"]][2:], [0, 1, 2])
+        self.assertTrue(any("cycle" in p for p in d["problems"]))
+
+    def test_export_cannot_break_out_of_its_script(self):
+        snap = {"id": "p", "title": "T", "exported": "x", "nodes": [{"id": "A", "title": "<!--<script></script>&"}]}
+        html = hub.page(snap)
+        blob = html[html.index("window.STEPWISE_STATIC="):html.index(";</script>", html.index("window.STEPWISE_STATIC="))]
+        self.assertNotIn("<", blob.split("=", 1)[1])
+        self.assertNotIn("&", blob.split("=", 1)[1])
+
+    def test_kush_reset_keeps_history_not_old_state(self):
+        raw = kush_raw()
+        raw["plan"]["nodes"][0].update(status="todo")  # reset, commit still recorded
+        raw["plan"]["nodes"][1]["log"] = [{"time": "2026-11-04 11:00:00", "who": "me", "text": "a note"}]
+        d = hub.normalize("kush", raw)
+        self.assertEqual(d["progress"]["X"]["state"], "todo")
+        self.assertEqual(d["progress"]["X"]["commit"], "")
+        self.assertEqual(d["progress"]["X"]["note"], "")
+        self.assertEqual(d["progress"]["Y"]["who"], "me")
+
+    def test_log_sorts_by_real_time(self):
+        raw = vela_raw()
+        raw["state"]["log"] = [{"t": "2026-11-04T20:02:35+01:00", "step": "A"}, {"t": "2026-11-04T19:48:21+00:00", "step": "B"}]
+        self.assertEqual([e["step"] for e in hub.normalize("vela", raw)["log"]], ["A", "B"])
+
+
 class LaunchTests(unittest.TestCase):
     def test_remote_launcher_passes_arguments_literally(self):
         req = json.dumps({"cli": [sys.executable, "-c", "import sys, json; print(json.dumps(sys.argv[1:]))"],
