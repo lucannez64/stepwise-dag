@@ -34,7 +34,7 @@ const GLYPH = { done: "✓", progress: "●", blocked: "✕", ready: "○", wait
 // Short status words on graph nodes; the right edge always keeps room for the longest.
 const SHORT = { done: "✓ done", progress: "● active", blocked: "✕ blocked", ready: "○ ready", waiting: "" };
 // Green, blue, yellow and red mean status, so areas use the other accents.
-const AREA_COLORS = ["teal", "mauve", "sky", "flamingo", "lavender", "rosewater"];
+const AREA_COLORS = ["teal", "sky", "lavender", "sapphire", "o2", "sub0"];
 
 let projects = [];          // summaries from /api/projects
 let route = { project: null, step: null };
@@ -172,7 +172,7 @@ function selectStep(id, center = false) {
   if (!route.project) return;
   if (id && !byId[id]) return;
   internalNav = true;
-  go(route.project, id, true);
+  go(route.project, id, false);
   internalNav = false;
   if (id && viewOf(route.project) === "graph" && graph) frameStep(id);
 }
@@ -221,8 +221,8 @@ function renderChrome() {
     const cores = a => a && a[3] ? `${a[3]} cores` : "";
     // A status bar, like an editor's: machine first, then git.
     $("facts").innerHTML = `
-      <span class="fact" title="Load average on ${esc(data.machine || data.host)} (${cores(data.load)})"><span>${esc(data.machine || data.host)}</span><b>${ld(data.load)}</b></span>
-      ${data.box_host ? `<span class="fact" title="Build box ${esc(data.box_host)} ${cores(data.box)}"><span>box</span><b>${data.box ? ld(data.box) : "offline"}</b></span>` : ""}
+      <span class="fact" title="Load average on ${esc(data.machine || data.host)} (${cores(data.load)})"><span>${esc(data.machine || data.host)} load</span><b>${ld(data.load)}</b></span>
+      ${data.box_host ? `<span class="fact" title="Build box ${esc(data.box_host)} ${cores(data.box)}"><span>box load</span><b>${data.box ? ld(data.box) : "offline"}</b></span>` : ""}
       ${r ? `<span class="fact" title="HEAD / ${esc(r.upstream || "no upstream")} (local tracking refs, no fetch)"><svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="3.5" r="1.8"/><circle cx="4" cy="12.5" r="1.8"/><circle cx="12" cy="6" r="1.8"/><path d="M4 5.3v5.4M12 7.8c0 2.5-3 2.7-6.2 4"/></g></svg><span class="br">${esc(r.branch || "HEAD")}</span><b>${esc(r.head || "?")}</b><span>/ ${esc(r.origin || "?")}</span></span>
       <span class="fact ${r.dirty ? "warn" : ""}" title="Commits ahead of ${esc(r.upstream || "upstream")}"><b>↑${r.ahead ?? "–"}</b>${r.dirty ? "<span>dirty</span>" : ""}</span>
       <span class="fact" title="Git worktrees"><b>${r.worktrees}</b><span>worktrees</span></span>` : ""}`;
@@ -452,6 +452,8 @@ function renderStage(routeOnly) {
     const sig = layoutSig();
     if (!graph || graph.sig !== sig || !stage.querySelector("svg.g")) buildGraph(sig);
     updateGraph();
+    // Partial redraws keep the old canvas, so make sure its controls are back on it.
+    if (canvasBar().parentNode !== stage) stage.appendChild(canvasBar());
     keepFramed();
     requestAnimationFrame(() => keepFramed());
   } else {
@@ -676,14 +678,15 @@ function updateGraph() {
     e.el.setAttribute("class", cls);
   }
   graph.svg.classList.toggle("hide-ex", narrowing() && !showContext);
-  let key = $("stage").querySelector(".edgekey");
+  let key = canvasBar().querySelector(".edgekey");
   if (s && !query) {
-    if (!key) { key = document.createElement("div"); key.className = "edgekey"; $("stage").appendChild(key); }
+    if (!key) { key = document.createElement("div"); key.className = "edgekey"; canvasBar().appendChild(key); }
     key.innerHTML = `<span><i style="border-color:var(--needs)"></i>needs (before ${esc(s)})</span><span><i style="border-color:var(--unblocks)"></i>unblocks (after ${esc(s)})</span>`;
   } else key?.remove();
   $("ctxBtn").disabled = !narrowing();
   $("ctxBtn").title = narrowing() ? "Keep every step in its usual place and fade the ones the filters leave out" : "Turn on a filter or search first";
   $("ctxBtn").setAttribute("aria-pressed", showContext);
+  edgePills();
   renderLegend();
 }
 let showContext = false;
@@ -727,16 +730,22 @@ function edgePills() {
     if (x >= 0 && y >= 0 && x <= r.width && y <= r.height) continue;
     pills.push({ id, kind, x, y });
   }
+  // the canvas controls and the minimap count as taken space
+  const placed = [...st.querySelectorAll(".canvasbar, .minimap:not([hidden])")].map(el => {
+    const b = el.getBoundingClientRect(); return { L: b.left - r.left, T: b.top - r.top, w: b.width, h: b.height };
+  });
   for (const q of pills.slice(0, 12)) {
     const b = document.createElement("button");
     b.className = "epill " + q.kind; b.textContent = (q.kind === "up" ? "← " : "→ ") + q.id;
     b.title = `Go to ${q.id}`;
     b.addEventListener("pointerdown", e => { e.stopPropagation(); focusNode(q.id); });
     st.appendChild(b);
-    // keep the whole label inside the canvas
+    // keep the whole label inside the canvas, and never on top of another label
     const w = b.offsetWidth, h = b.offsetHeight;
-    b.style.left = Math.min(r.width - w - 8, Math.max(8, q.x - w / 2)) + "px";
-    b.style.top = Math.min(r.height - h - 8, Math.max(8, q.y - h / 2)) + "px";
+    let L = Math.min(r.width - w - 8, Math.max(8, q.x - w / 2)), T = Math.min(r.height - h - 64, Math.max(8, q.y - h / 2));
+    for (let i = 0; i < 40 && placed.some(o => L < o.L + o.w + 4 && o.L < L + w + 4 && T < o.T + o.h + 4 && o.T < T + h + 4); i++) T = T - h - 6 < 8 ? T + h + 6 : T - h - 6;
+    placed.push({ L, T, w, h });
+    b.style.left = L + "px"; b.style.top = T + "px";
   }
 }
 // Far out, every id is drawn at a fixed 11px on screen, shortened to fit its card.
@@ -832,7 +841,7 @@ function frameStep(id) {
   const w = Math.max(...ps.map(p => p.x)) - Math.min(...ps.map(p => p.x)) + graph.W + 2 * M;
   const h = Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y)) + graph.H + 2 * M;
   const k = Math.min(1, r.width / w, r.height / h);
-  if (k >= 0.45 && ps.length > 1) fitNodes([id, ...n.deps, ...n.users], 0.45, 1); else focusNode(id);
+  if (k >= 0.75 && ps.length > 1) fitNodes([id, ...n.deps, ...n.users], 0.75, 1); else focusNode(id);
 }
 function fitRelated(id) {
   const n = byId[id]; if (!n) return;
@@ -948,7 +957,7 @@ const tip = $("tip");
 function showTip(id, e, el) {
   const n = byId[id]; if (!n) return;
   const en = entry(id);
-  const bits = [`<span class="pill ${n.status}" style="height:18px">${LABEL[n.status]}</span>`, n.size && `size ${esc(n.size)}`, n.hard && `<span style="color:var(--red)">hard</span>`, `order ${n.order}`, en && en.started && n.status === "progress" && runtime(en)].filter(Boolean);
+  const bits = [`<span class="pill ${n.status}" style="height:18px">${LABEL[n.status]}</span>`, n.size && `size ${esc(n.size)}`, n.hard && `<span class="hardtag">hard</span>`, `order ${n.order}`, en && en.started && n.status === "progress" && runtime(en)].filter(Boolean);
   const text = (en && en.note) || n.check || n.desc;
   tip.innerHTML = `<div class="h">${esc(n.id)}</div><div>${esc(n.title)}</div><div class="l">${bits.join(" · ")}</div>${text ? `<div class="muted">${esc(text.length > 260 ? text.slice(0, 259) + "…" : text)}</div>` : ""}`;
   tip.style.display = "block";
@@ -988,7 +997,7 @@ function renderOrder() {
   const rows = foldRow + shown.slice(fold ? lead : 0).map(n => {
     const e = entry(n.id);
     const area = data.areas[n.area] && n.area !== n.status && data.areas[n.area] !== n.status ? esc(data.areas[n.area]) : "";
-    const meta = [area, n.size && esc(n.size), n.hard && '<span style="color:var(--red)">hard</span>'].filter(Boolean).join(" · ");
+    const meta = [area, n.size && esc(n.size), n.hard && '<span class="hardtag">hard</span>'].filter(Boolean).join(" · ");
     const state = n.status === "progress" ? `<span class="pill progress sm">${esc(since(e))}</span>` : `<span class="pill ${n.unpushed ? "unpushed" : n.status} sm">${n.unpushed ? "not pushed" : LABEL[n.status]}</span>`;
     return `<div class="orow${n.id === s ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${meta ? `<span class="muted">${meta}</span>` : ""}${state}</span></div>`;
   }).join("") || noRows();
@@ -1020,7 +1029,7 @@ function renderTable() {
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
       <td class="wrap c-check">${esc(n.check || n.desc)}</td>
       <td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
-      <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
+      <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span class="hardtag">hard</span>' : ""}</td>
       <td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
       <td class="c-meta">${esc([data.areas[n.area] || n.area, n.size, n.deps.length ? `${n.deps.length} prerequisite${n.deps.length > 1 ? "s" : ""}` : "no prerequisites"].filter(Boolean).join(" · "))}</td>
       ${["order", "id", "title", "status"].includes(tableSort.key) ? "" : `<td class="c-sortval">${esc((COLS.find(c => c[0] === tableSort.key) || COLS[0])[1])}: ${esc(String((COLS.find(c => c[0] === tableSort.key) || COLS[0])[2](n)))}</td>`}
@@ -1092,7 +1101,7 @@ function overview() {
   const head = filter ? LABEL[filter][0].toUpperCase() + LABEL[filter].slice(1) + (critOn ? ` on ${chainName}` : "") : chainName[0].toUpperCase() + chainName.slice(1);
   const flist = filter || critOn ? `<h3 style="margin-top:2px">${head}${offAreas().size ? " in shown areas" : ""} · ${fl.length}</h3>${linkList(fl.map(n => n.id), "No steps match these filters.", !!filter)}
     <button class="btn ghost small" data-reset-filters style="margin-top:6px">Reset filters</button>` : "";
-  const help = viewOf(data.id) === "graph" ? "Click a step to see its details. Fit shows the whole graph." : "Click a step to see its details.";
+  const help = viewOf(data.id) === "graph" ? "Click a step to see its details. Overview shows the whole graph." : "Click a step to see its details.";
   if (flist && !q) return `${problems}${flist}<p class="muted small">${help}</p>`;
   return `${problems}${found}
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}

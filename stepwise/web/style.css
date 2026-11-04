@@ -417,7 +417,8 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .node.progress .pulse { animation: none; opacity: 0; }
   .logrow.fresh, .toast { animation: none; }
 }
-@media (max-width: 1440px) { .statusbar .legend { display: none; } }
+/* laptops keep the key as swatches; names are in tooltips */
+@media (max-width: 1440px) { .statusbar .legend .k { font-size: 0; gap: 0; } .statusbar .legend { gap: 6px; } }
 @media (max-width: 1100px) { .search input { width: 170px; } }
 @media (max-width: 900px) {
   .brand span { display: none; }
@@ -832,3 +833,11 @@ table.t td.c-check { min-width: 320px; } table.t td.c-deps { max-width: 120px; o
   .switch-btn .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 42vw; }
   .panel { mask-image: none; }
 }
+
+/* in progress: readable text on a light fill, yellow kept for the border */
+:root[data-theme="macchiato"] .node.progress .box { fill: color-mix(in srgb, var(--progress) 12%, var(--base)); }
+:root[data-theme="latte"] .node .st-progress { fill: #8a5200; }
+.hardtag { font-weight: 750; color: var(--sub0); }
+.canvasbar .edgekey { position: static; box-shadow: var(--shadow); }
+.epill { background: var(--card); }
+@media (max-width: 900px) { .canvasbar .edgekey { display: none; } }
