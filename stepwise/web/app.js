@@ -303,7 +303,7 @@ function renderHome() {
       <div class="big"><b>${pct}%</b><span>${c.done} of ${c.total} steps done</span></div>
       ${stackBar(c)}
       <div class="counts">${sw("progress", c.progress, "in progress")}${c.blocked ? sw("blocked", c.blocked, "blocked") : ""}${sw("ready", c.ready, "ready")}<span><i class="sw" style="background:var(--s1)"></i><b>${c.waiting}</b> waiting</span>${c.unpushed ? sw("peach", c.unpushed, "not pushed") : ""}</div>
-      ${p.problems && p.problems.length ? `<div class="errbox">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : ""}
+      ${p.problems && p.problems.length ? `<div class="errbox slot-problems">${p.problems.length} plan problem${p.problems.length > 1 ? "s" : ""}: ${esc(p.problems[0])}</div>` : ""}
       ${p.active.length ? `<div class="sec-active"><h3>In progress</h3><ul>${active}</ul></div>` : ""}
       ${ready ? `<details class="sec-ready"${phone() ? "" : " open"}><summary><h3>${phone() ? `Show next steps · ${p.ready.length}` : "Ready next"}</h3></summary><ul>${ready}</ul></details>`
         : p.active.length ? "" : '<div class="empty">Nothing ready</div>'}
@@ -371,6 +371,7 @@ function renderToolbar() {
   $("fBlocked").hidden = !c.blocked && filter !== "blocked";
   document.querySelectorAll("[data-filter]").forEach(b => b.setAttribute("aria-pressed", (filter || "") === b.dataset.filter));
   $("critBtn").setAttribute("aria-pressed", critOn);
+  $("critBtn").lastChild.textContent = data.critical_computed ? "Longest chain" : "Critical path";
   $("critBtn").title = data.critical_computed ? "Longest chain of steps (computed: counts steps, not time) (c)" : "Critical path from the plan (c)";
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
   const v = viewOf(data.id);
@@ -469,7 +470,7 @@ function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
   const G = prefs.text / 100;  // text size scales the cards too
-  const W = Math.round((comfy ? 296 : 280) * G), H = Math.round((comfy ? 62 : 58) * G);
+  const W = Math.round((comfy ? 272 : 256) * G), H = Math.round((comfy ? 80 : 74) * G);
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -550,29 +551,39 @@ function buildGraph(sig) {
     svgEl("rect", { class: "pulse", width: W, height: H, rx: 7 }, g);
     svgEl("rect", { class: "box", width: W, height: H, rx: 7 }, g);
     svgEl("rect", { x: 4, y: 6, width: 3, height: H - 12, rx: 1.5, fill: areaColor(n.area) }, g);
+    // Row 1: order and the full id. Rows 2-3: title. Bottom row: size, hard, status.
     let cx = 14;
     const ord = svgEl("text", { class: "ord", x: cx, y: 19 * G }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5 * G) + 6;
     const idt = svgEl("text", { class: "id", x: cx, y: 19 * G }, g);
-    const st = svgEl("text", { class: "st", x: W - 9, y: 19 * G, "text-anchor": "end" }, g);
-    // fit the id, size and hard tags, leaving room for the longest status word
-    const STATUS_ROOM = monoW("✕ unpushed", 10.5 * G) + 8;
-    const room = W - 9 - STATUS_ROOM - cx;
+    const room = W - 10 - cx;
     let id = n.id;
     if (monoW(id, 13 * G) > room) { while (id.length > 3 && monoW(id + "…", 13 * G) > room) id = id.slice(0, -1); id += "…"; }
-    idt.textContent = id; cx += monoW(id, 13 * G) + 6;
-    const limit = W - 9 - STATUS_ROOM;
-    if (prefs.sizes && n.size && cx + monoW(n.size, 10 * G) <= limit) { svgEl("text", { class: "tag", x: cx, y: 19 * G }, g).textContent = n.size; cx += monoW(n.size, 10 * G) + 6; }
-    if (n.hard && cx + 24 * G <= limit) { svgEl("text", { class: "hard", x: cx, y: 19 * G }, g).textContent = "hard"; cx += 28 * G; }
+    idt.textContent = id;
     const [l1, l2] = wrap2(n.title, W - 24, 12 * G);
-    svgEl("text", { class: "tt", x: 14, y: (comfy ? 38 : 36) * G }, g).textContent = l1;
-    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: (comfy ? 53 : 50) * G }, g).textContent = l2;
+    svgEl("text", { class: "tt", x: 14, y: 37 * G }, g).textContent = l1;
+    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: 51 * G }, g).textContent = l2;
+    const by = H - 10 * G;
+    let bx = 14;
+    if (prefs.sizes && n.size) { svgEl("text", { class: "tag", x: bx, y: by }, g).textContent = n.size; bx += monoW(n.size, 10 * G) + 8; }
+    if (n.hard) svgEl("text", { class: "hard", x: bx, y: by }, g).textContent = "hard";
+    const st = svgEl("text", { class: "st", x: W - 9, y: by, "text-anchor": "end" }, g);
     // Far zoom shows only a large id, centred.
     let big = n.id;
     while (big.length > 3 && monoW(big, 26) > W - 16) big = big.slice(0, -2) + "…";
     svgEl("text", { class: "farid", x: W / 2, y: H / 2 + 8, "text-anchor": "middle" }, g).textContent = big;
-    els[n.id] = { g, st, statusRoom: W - 9 - cx };
+    els[n.id] = { g, st };
   }
   graph = { sig, svg, vp, edges, els, pos, W, H, worldW, worldH, lr };
+  const mm = document.createElement("div");
+  mm.className = "minimap"; mm.title = "Overview: click to move there";
+  mm.innerHTML = "<canvas></canvas>";
+  mm.addEventListener("pointerdown", e => {
+    e.stopPropagation();
+    const b = mm.querySelector("canvas").getBoundingClientRect(), r = stage.getBoundingClientRect(), c = cams.get(data.id);
+    const wx = (e.clientX - b.left) / graph.mini.sc, wy = (e.clientY - b.top) / graph.mini.sc;
+    setCam(c.k, r.width / 2 - wx * c.k, r.height / 2 - wy * c.k);
+  });
+  stage.appendChild(mm);
   bindGraph(svg);
   const cam = cams.get(data.id);
   if (cam && cam.sig === sig) applyCam(); else initialView();
@@ -616,10 +627,32 @@ function renderLegend() {
 }
 
 // camera
+// A small overview map: every step as a dot in its status colour, and the visible area.
+function drawMinimap() {
+  const cv = $("stage").querySelector(".minimap canvas");
+  if (!cv || !graph) return;
+  const c = cams.get(data.id), r = $("stage").getBoundingClientRect();
+  const MW = 180, MH = Math.max(60, Math.min(130, MW * graph.worldH / graph.worldW));
+  const dpr = devicePixelRatio || 1;
+  cv.width = MW * dpr; cv.height = MH * dpr; cv.style.width = MW + "px"; cv.style.height = MH + "px";
+  const ctx = cv.getContext("2d"), sc = Math.min(MW / graph.worldW, MH / graph.worldH);
+  ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement), col = v => css.getPropertyValue(v).trim();
+  const fill = { done: col("--green"), progress: col("--yellow"), ready: col("--blue"), blocked: col("--red"), waiting: col("--s2") };
+  for (const n of data.nodes) {
+    const p = graph.pos[n.id]; if (!p) continue;
+    ctx.fillStyle = fill[n.status];
+    ctx.fillRect(p.x * sc, p.y * sc, Math.max(2, graph.W * sc), Math.max(1.5, graph.H * sc));
+  }
+  ctx.strokeStyle = col("--text"); ctx.lineWidth = 1.2;
+  ctx.strokeRect(-c.tx / c.k * sc, -c.ty / c.k * sc, r.width / c.k * sc, r.height / c.k * sc);
+  graph.mini = { sc };
+}
 function applyCam() {
   const c = cams.get(data.id);
   graph.vp.setAttribute("transform", `translate(${c.tx},${c.ty}) scale(${c.k})`);
   graph.svg.classList.toggle("far", c.k < 0.4);
+  drawMinimap();
   graph.svg.classList.toggle("mid", c.k >= 0.4 && c.k < 0.62);
   $("zPct").textContent = Math.round(c.k * 100) + "%";
   const dg = $("stage").querySelector(".dotgrid");
@@ -645,7 +678,15 @@ function initialView() {
   const s = sel();
   const active = data.nodes.filter(n => n.status === "progress").sort((a, b) => a.order - b.order)[0];
   if (s) focusNode(s);
-  else if (active) focusNode(active.id);
+  else if (active) focusWork();
+}
+// Frame the steps in progress with their nearby prerequisites and dependents.
+function focusWork() {
+  const act = data.nodes.filter(n => n.status === "progress" || n.status === "blocked");
+  if (!act.length) return fitAll();
+  const near = new Set();
+  act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
+  fitNodes([...near], 0.8, 1);
 }
 // Fit the camera around some steps, for example the critical path.
 function fitNodes(ids, floor = 0.45, ceil = 1.1) {
@@ -782,8 +823,10 @@ function renderOrder() {
     const state = n.status === "progress" ? `<span class="pill progress sm">${esc(since(e))}</span>` : `<span class="pill ${n.unpushed ? "unpushed" : n.status} sm">${n.unpushed ? "not pushed" : LABEL[n.status]}</span>`;
     return `<div class="orow${n.id === s ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${meta ? `<span class="muted">${meta}</span>` : ""}${state}</span></div>`;
   }).join("") || noRows();
-  const idw = Math.min(22, Math.max(4, ...data.nodes.map(n => n.id.length)));
-  $("stage").innerHTML = `<div class="list" style="--idw:${idw}ch"><div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
+  const idw = Math.min(24, Math.max(4, ...data.nodes.map(n => n.id.length)));
+  const active = !filter && !query ? data.order.map(id => byId[id]).filter(n => n.status === "progress" || n.status === "blocked") : [];
+  const pinned = active.length ? `<div class="pinned"><div class="lvlrow">IN PROGRESS · ${active.length}</div>${active.map(n => `<div class="orow${n.id === s ? " sel" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.status}"></span><span class="id">${esc(n.id)}</span><span class="t">${esc(n.title)}</span><span class="r"><span class="pill ${n.status} sm">${esc(n.status === "blocked" ? "blocked" : since(entry(n.id)))}</span></span></div>`).join("")}</div>` : "";
+  $("stage").innerHTML = `<div class="list" style="--idw:${idw}ch">${pinned}<div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
   keepScroll(top, s);
 }
 
@@ -836,6 +879,8 @@ const linkList = (ids, empty, plain = false) => `<ul class="links">${ids.map(id 
 function renderPanel() {
   const p = $("panel"), keep = p.scrollTop, s = sel();
   $("app").classList.toggle("sheet", !!s);
+  // The table needs the width; its overview panel comes back when a row is selected.
+  $("work").classList.toggle("wide", viewOf(data.id) === "table" && !s);
   const focused = document.activeElement && document.activeElement.id === "noteIn";
   const draft = $("noteIn") ? $("noteIn").value : "";
   p.innerHTML = s ? detail(byId[s]) : overview();
@@ -852,7 +897,8 @@ function overview() {
   // An active filter lists its steps first, so results stay readable whatever the zoom.
   const fl = filter ? data.order.map(id => byId[id]).filter(n => n.status === filter) : critOn ? data.critical.map(id => byId[id]) : [];
   const flist = filter || critOn ? `<h3 style="margin-top:2px">${critOn && !filter ? (data.critical_computed ? "Longest chain" : "Critical path") : LABEL[filter][0].toUpperCase() + LABEL[filter].slice(1)} · ${fl.length}</h3>${linkList(fl.map(n => n.id), "No steps.", !critOn)}` : "";
-  if (flist && !q) return `${problems}${flist}<p class="muted small">Click a step to see its details. Fit shows the whole graph.</p>`;
+  const help = viewOf(data.id) === "graph" ? "Click a step to see its details. Fit shows the whole graph." : "Click a step to see its details.";
+  if (flist && !q) return `${problems}${flist}<p class="muted small">${help}</p>`;
   return `${problems}${found}
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
     ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
@@ -1096,6 +1142,7 @@ $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "dire
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
 $("zFit").onclick = () => fitAll();
+$("zFocus").onclick = () => focusWork();
 $("moreBtn").onclick = () => { const o = !$("toolbar").classList.contains("open"); $("toolbar").classList.toggle("open", o); $("moreBtn").setAttribute("aria-expanded", o); };
 $("qClear").onclick = () => { $("q").value = query = ""; renderStage(); $("q").focus(); };
 $("dirBtn").onclick = () => { prefs.dir[data.id] = dirOf(data.id) === "LR" ? "TB" : "LR"; savePrefs(); graph = null; renderProject(); };
@@ -1136,7 +1183,7 @@ function renderPrefs() {
     <div class="prow"><span>Direction</span>${seg("dir", dirOf(data.id), [["TB", "Top ↓"], ["LR", "Left →"]])}</div>
     <div class="prow"><span>On select</span>${seg("edges", edgesOf(data.id), [["all", "Whole chain"], ["direct", "Direct"]])}</div>
     ${STATIC ? "" : `<a class="btn small" style="margin-top:4px" href="export/${encodeURIComponent(data.id)}.html">Download offline snapshot</a>`}` : ""}
-    <h3>Keys</h3><div class="keys">${[["/", "Find a step"], ["0–9", "Switch project"], ["g o t", "Graph, order, table"], ["f", "Fit everything"], ["c", "Critical path"], ["e", "Direct edges"], ["d", "Direction"], ["Esc", "Clear selection"]]
+    <h3>Keys</h3><div class="keys">${[["/", "Find a step"], ["0–9", "Switch project"], ["g o t", "Graph, order, table"], ["f", "Fit everything"], ["w", "Focus work in progress"], ["c", "Critical path"], ["e", "Direct edges"], ["d", "Direction"], ["Esc", "Clear selection"]]
       .map(([k, l]) => `<span>${l}</span><span class="kbd">${k}</span>`).join("")}</div>
     <div class="btns"><button class="btn ghost small" id="pReset">Reset view settings</button></div>`;
   $("prefs").querySelectorAll(".pseg").forEach(g => g.addEventListener("click", e => {
@@ -1182,6 +1229,7 @@ addEventListener("keydown", e => {
   if (e.key === "e") return $("edgeBtn").click();
   if (viewOf(data.id) !== "graph" || !graph) return;
   if (e.key === "f") return fitAll();
+  if (e.key === "w") return focusWork();
   if (e.key === "d") return $("dirBtn").click();
   if (e.key === "+" || e.key === "=") return zoomAt(1.2);
   if (e.key === "-") return zoomAt(1 / 1.2);

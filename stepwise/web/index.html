@@ -49,8 +49,6 @@
       <button data-view="order" aria-pressed="false" title="Build order (o)">Order</button>
       <button data-view="table" aria-pressed="false" title="Table (t)">Table</button>
     </div>
-    <button class="tog only-phone" id="moreBtn" aria-expanded="false" aria-controls="tbMore">Filters</button>
-    <div class="tb-more" id="tbMore">
     <span class="vsep"></span>
     <div class="seg" role="group" aria-label="Show" id="filterSeg">
       <button data-filter="" aria-pressed="true">All</button>
@@ -58,7 +56,9 @@
       <button data-filter="ready" aria-pressed="false" title="Only steps whose prerequisites are done"><i class="sw" style="background:var(--ready)"></i>Ready <span class="n" id="nReady"></span></button>
       <button data-filter="blocked" aria-pressed="false" id="fBlocked" hidden><i class="sw" style="background:var(--blocked)"></i>Blocked <span class="n" id="nBlocked"></span></button>
     </div>
-    <button class="tog" id="critBtn" aria-pressed="false" title="Longest dependency chain (c)"><i class="sw" style="background:var(--crit)"></i>Critical path</button>
+    <button class="tog only-phone" id="moreBtn" aria-expanded="false" aria-controls="tbMore">More</button>
+    <div class="tb-more" id="tbMore">
+    <button class="tog" id="critBtn" aria-pressed="false" title="Longest dependency chain (c)"><i class="sw" style="background:var(--crit)"></i><span>Critical path</span></button>
     <button class="tog" id="edgeBtn" aria-pressed="false" title="When a step is selected, highlight only its direct links (e)">Direct edges</button>
     <div class="areapick" id="areaPick">
       <button class="tog" id="areaBtn" aria-haspopup="true" aria-expanded="false"><span id="areaLbl">Areas</span>
@@ -71,6 +71,7 @@
       <button id="zOut" aria-label="Zoom out" title="Zoom out (−)">−</button>
       <span class="pct" id="zPct">100%</span>
       <button id="zIn" aria-label="Zoom in" title="Zoom in (+)">+</button>
+      <button class="fit" id="zFocus" title="Focus the work in progress (w)">Focus</button>
       <button class="fit" id="zFit" title="Fit everything (f)">Fit</button>
     </div>
     <button class="iconbtn" id="dirBtn" title="Graph direction (d)" aria-label="Switch graph direction"></button>
