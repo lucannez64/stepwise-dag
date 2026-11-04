@@ -24,6 +24,7 @@ Config (default ~/.config/stepwise/hub.json):
 environment variables to CLI writes. `box` is a second machine whose load is
 shown next to the project's own.
 """
+import base64
 import datetime as dt
 import json
 import os
@@ -40,9 +41,10 @@ from urllib.parse import unquote, urlparse
 HERE = Path(__file__).resolve().parent
 WEB = HERE / "web"
 PROBE = (HERE / "probe.py").read_text()
-SSH_DIR = Path.home() / ".cache" / "stepwise"
+# Unix sockets have a ~108 byte path limit, so prefer the short runtime dir.
+SSH_DIR = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / f"stepwise-{os.getuid()}"
 MAX_MSG = 2000
-LOG_KEEP = 400
+LOG_KEEP = 5000
 
 # Actions each format's own CLI understands, and how to spell them.
 FORMATS = {
@@ -65,11 +67,11 @@ def now_iso():
 
 
 def ssh_opts():
-    SSH_DIR.mkdir(parents=True, exist_ok=True)
+    SSH_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     # Keepalives make a shared connection notice a dead network within ~10 s.
     return ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
             "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
-            "-o", "ControlMaster=auto", "-o", f"ControlPath={SSH_DIR}/ssh-%C", "-o", "ControlPersist=600"]
+            "-o", "ControlMaster=auto", "-o", f"ControlPath={SSH_DIR}/%C", "-o", "ControlPersist=600"]
 
 
 def ssh_cmd(host, remote):
@@ -288,6 +290,7 @@ class Project:
         self.error = None
         self.fetched = 0.0
         self.lock = threading.Lock()
+        self.reloading = threading.Lock()  # one probe at a time, so an older read never wins
         self.wake = threading.Event()
 
     def path(self, key):
@@ -312,12 +315,17 @@ class Project:
             id=self.id, title=self.title, format=self.fmt, host=self.host or "this machine",
             machine=raw.get("hostname"), load=raw.get("load"), repo=raw.get("repo"),
             mtime=raw.get("mtime"), actions=list(FORMATS[self.fmt]),
+            log_starts=self.fmt == "vela",  # VELA's CLI starts a step when you log on it
             direction=self.cfg.get("direction", "TB"), edges=self.cfg.get("edges", "all"),
             box_host=self.cfg.get("box"),
         )
         return data
 
     def refresh(self):
+        with self.reloading:
+            self._refresh()
+
+    def _refresh(self):
         try:
             data = self.probe()
             with self.lock:
@@ -426,6 +434,8 @@ def page(static=None):
     js = (WEB / "app.js").read_text()
     blob = json.dumps(static).replace("</", "<\\/")
     html = html.replace('<link rel="stylesheet" href="style.css">', f"<style>{css}</style>")
+    icon = "data:image/svg+xml;base64," + base64.b64encode((WEB / "favicon.svg").read_bytes()).decode()
+    html = html.replace('href="favicon.svg"', f'href="{icon}"')
     return html.replace('<script src="app.js"></script>',
                         f"<script>window.STEPWISE_STATIC={blob};</script><script>{js}</script>")
 
@@ -451,7 +461,7 @@ def export(cfg, base, project_id, output):
     Path(output).write_text(page(dict(snap, exported=now_iso())))
 
 
-def serve(cfg, base, port, hosts):
+def serve(cfg, base, port, hosts, names=()):
     projects = load_projects(cfg, base)
     by = {p.id: p for p in projects}
     boxes = Boxes(p.cfg["box"] for p in projects if p.cfg.get("box"))
@@ -531,7 +541,7 @@ def serve(cfg, base, port, hosts):
     servers = [ThreadingHTTPServer((hosts[0], port), Handler)]
     port = servers[0].server_port  # port 0 picks a free one
     servers += [ThreadingHTTPServer((h, port), Handler) for h in hosts[1:]]
-    allowed_hosts.update({f"{h}:{port}" for h in hosts} | {f"localhost:{port}", f"127.0.0.1:{port}"})
+    allowed_hosts.update({f"{h}:{port}" for h in [*hosts, *names]} | {f"localhost:{port}", f"127.0.0.1:{port}"})
     for h in hosts:
         print(f"Stepwise ({len(projects)} project{'s' * (len(projects) > 1)}): http://{h}:{port}", flush=True)
     for s in servers[1:]:
@@ -547,6 +557,16 @@ def tailscale_ip():
     return out.split()[0] if code == 0 and out.split() else None
 
 
+def tailscale_names():
+    """This machine's MagicDNS names, so http://<name>:<port> works from a phone."""
+    code, out, _ = run(None, ["tailscale", "status", "--json"], timeout=5)
+    try:
+        dns = json.loads(out)["Self"]["DNSName"].rstrip(".") if code == 0 else ""
+    except (ValueError, KeyError, AttributeError):
+        return []
+    return [dns, dns.split(".")[0]] if dns else []
+
+
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(prog="stepwise hub", description=__doc__,
@@ -556,9 +576,13 @@ def main(argv=None):
     ap.add_argument("--tailscale", action="store_true",
                     help="also listen on this machine's Tailscale address (tailnet devices only, e.g. a phone)")
     ap.add_argument("--host", action="append", default=[], help="extra address to listen on")
+    ap.add_argument("--allow-name", action="append", default=[],
+                    help="extra host name browsers may use to reach the hub (Tailscale names are added with --tailscale)")
     a = ap.parse_args(argv)
     hosts = ["127.0.0.1"] + a.host
+    names = list(a.allow_name)
     if a.tailscale:
+        names += tailscale_names()
         ip = tailscale_ip()
         if not ip:
             raise SystemExit("--tailscale: no Tailscale IPv4 address (is tailscaled up?)")
@@ -566,7 +590,7 @@ def main(argv=None):
     path = Path(a.config).expanduser()
     if not path.exists():
         raise SystemExit(f"{path} not found. Write one: see `python3 -m stepwise hub --help`.")
-    serve(json.loads(path.read_text()), path.parent, a.port, list(dict.fromkeys(hosts)))
+    serve(json.loads(path.read_text()), path.parent, a.port, list(dict.fromkeys(hosts)), names)
 
 
 if __name__ == "__main__":

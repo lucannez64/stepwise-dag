@@ -97,39 +97,9 @@ python3 -m stepwise --plan imported/kush.json --state imported/kush-state.json s
 
 Kush's `desc`, embedded `status`, `commit` and logs are imported. VELA's `done` becomes `exit_check`; its optional separate status file retains progress. Derived `step`, `level` and critical-path fields are recomputed. Imports are snapshots, not write-through synchronization. Existing destinations are refused. Keep original files as the archive for fields outside the shared schema.
 
-## Bring an existing plan
-
-Import into **new destination paths**, leaving original plans and running dashboards untouched:
-
-```sh
-python3 -m stepwise --plan imported/kush.json --state imported/kush-state.json import /path/to/kush/plan/plan.json
-python3 -m stepwise --plan imported/vela.json --state imported/vela-state.json import /path/to/formalization-plan.json --source-state /path/to/formalization-status.json
-python3 -m stepwise --plan imported/kush.json --state imported/kush-state.json serve
-```
-
-Kush's `desc`, embedded `status`, `commit` and logs are imported. VELA's `done` becomes `exit_check`; its optional separate status file retains progress. Derived `step`, `level` and critical-path fields are recomputed. Imports are snapshots, not write-through synchronization. Existing destinations are refused. Keep original files as the archive for fields outside the shared schema.
-
-## Dashboard
-
-- Compact graph workspace with a single toolbar, dependency-layer layout, direct/transitive edge highlighting, and a side-panel order list. Zoom, pan, Fit all and Readable controls.
-- Search, area and state filters; selection highlights ancestors and descendants.
-- Completion checks, prerequisites, work unblocked, risk flags, activity and retry counts.
-- Longest dependency chain highlighting, explicitly measured in steps rather than time.
-- Theme (system/light/dark), density, text size, graph direction, panel width and estimate visibility. Preferences persist in browser storage and never edit the plan. Compact, top-to-bottom layout is the default; customization controls stay collapsed.
-- Live refresh every three seconds. Updates are milestone reports, not automatic observation of agent work.
-- Keyboard-focusable nodes and controls, visible focus indicators, textual state labels and a build-order alternative to the graph.
-
-Optional `serve --repo /path/to/repo` inspects branch, HEAD, upstream and commit ancestry without changing the repository. Push indicators refer to **local tracking refs**, never a fresh query of GitHub; missing refs or commits show unknown. It performs no fetches, SSH calls or host telemetry collection.
-
-```sh
-python3 -m stepwise export plan-snapshot.html
-```
-
-The exported file includes plan and progress data and works offline. It is read-only; preferences still work. Review its contents before sharing. No project data is included in this repository beyond the neutral example.
-
 ## Planning conventions
 
-A plan is a DAG, not a priority ranking or commit history. Edges represent actual prerequisites. Independent nodes can swap positions in a topological ordering. Stepwise uses lexicographic ID tie-breaking for reproducibility, independent of progress state.
+A plan is a DAG, not a priority ranking or commit history. Edges represent actual prerequisites. Independent nodes can swap positions in a topological ordering. When a plan has no step numbers of its own, Stepwise puts finished steps first, then shallower ones, then file order, so the list reads naturally. VELA plans keep their own numbering.
 
 Keep each step small enough to produce one reviewable result with an observable exit check. If a milestone takes days, split design, implementation, negative tests and integration into separate nodes, preserving its incoming and outgoing dependencies. Keep suggestions about priority in project notes rather than inventing dependency edges.
 

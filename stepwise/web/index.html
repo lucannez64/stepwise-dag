@@ -57,8 +57,7 @@
     <button class="tog" data-filter="blocked" aria-pressed="false" id="fBlocked" hidden><i class="sw" style="background:var(--blocked)"></i>Blocked <span class="n" id="nBlocked"></span></button>
     <button class="tog" id="critBtn" aria-pressed="false" title="Longest dependency chain (c)"><i class="sw" style="background:var(--crit)"></i>Critical path</button>
     <button class="tog" id="edgeBtn" aria-pressed="false" title="When a step is selected, highlight only its direct links (e)">Direct edges</button>
-    <span class="vsep"></span>
-    <div class="areas" id="areas" aria-label="Areas"></div>
+    <span class="spacer"></span>
     <div class="zoom" id="zoomCtl">
       <button id="zOut" aria-label="Zoom out" title="Zoom out (−)">−</button>
       <button class="pct" id="zPct" title="Fit everything (f)">100%</button>
@@ -66,6 +65,7 @@
     </div>
     <button class="iconbtn" id="dirBtn" title="Graph direction (d)" aria-label="Switch graph direction"></button>
   </div>
+  <div class="chiprow" id="chiprow" hidden><span class="lbl">Areas</span><div class="areas" id="areas" aria-label="Areas"></div><span class="muted small" id="areaHint">Alt-click shows one area only</span></div>
   <main id="main"></main>
 </div>
 <div class="pop" id="prefs" hidden></div>

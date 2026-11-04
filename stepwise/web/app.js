@@ -85,7 +85,7 @@ async function getJSON(url) {
 }
 
 async function pollProjects() {
-  if (STATIC) return;
+  if (STATIC || document.hidden) return;
   try {
     const d = await getJSON("api/projects");
     projects = d.projects; hubOk = Date.now(); hubErr = null;
@@ -95,7 +95,7 @@ async function pollProjects() {
 }
 
 async function pollProject() {
-  if (STATIC || !route.project) return;
+  if (STATIC || !route.project || document.hidden) return;
   const id = route.project;
   try {
     const d = await getJSON("api/project/" + encodeURIComponent(id));
@@ -159,6 +159,7 @@ function renderChrome() {
   const home = !route.project;
   $("app").classList.toggle("home", home);
   $("toolbar").hidden = home || !data || !data.nodes;
+  if ($("toolbar").hidden) $("chiprow").hidden = true;
   // switcher label
   const cur = home ? null : (data && data.id === route.project ? data : projects.find(p => p.id === route.project));
   $("switchName").textContent = home ? "All projects" : (cur ? cur.title : route.project);
@@ -332,7 +333,7 @@ function renderToolbar() {
     : `<svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="9" y="2" width="6" height="6" rx="1.5"/><rect x="4" y="16" width="6" height="6" rx="1.5"/><rect x="14" y="16" width="6" height="6" rx="1.5"/><path d="M12 8v4m0 0c0 2-5 2-5 4m5-4c0 2 5 2 5 4"/></g></svg>`;
   $("dirBtn").title = (lr ? "Left to right" : "Top to bottom") + " · switch direction (d)";
   const off = offAreas(), keys = Object.keys(data.areas);
-  $("areas").hidden = keys.length < 2;
+  $("chiprow").hidden = keys.length < 2;
   $("areas").innerHTML = keys.map((a, i) => `<button class="chip" data-area="${esc(a)}" aria-pressed="${!off.has(a)}" title="${esc(data.areas[a])}"><i class="sw" style="background:${areaColor(a)}"></i>${esc(a === data.areas[a] || !a ? data.areas[a] : a + " · " + data.areas[a])} <span class="n">${data.nodes.filter(n => n.area === a).length}</span></button>`).join("");
 }
 const areaColor = a => `var(--${AREA_COLORS[Math.max(0, Object.keys(data.areas).indexOf(a)) % AREA_COLORS.length]})`;
@@ -549,7 +550,9 @@ function initialView() {
     setCam(k, (r.width - graph.worldW * k) / 2, 8);
   }
   const s = sel();
+  const active = data.nodes.filter(n => n.status === "progress").sort((a, b) => a.order - b.order)[0];
   if (s) focusNode(s);
+  else if (active) focusNode(active.id);
 }
 // Fit the camera around some steps, for example the critical path.
 function fitNodes(ids) {
@@ -558,8 +561,12 @@ function fitNodes(ids) {
   const r = $("stage").getBoundingClientRect();
   const x0 = Math.min(...ps.map(p => p.x)) - 30, y0 = Math.min(...ps.map(p => p.y)) - 30;
   const x1 = Math.max(...ps.map(p => p.x)) + graph.W + 30, y1 = Math.max(...ps.map(p => p.y)) + graph.H + 30;
-  const k = Math.min(1.1, r.width / (x1 - x0), r.height / (y1 - y0));
-  setCam(k, (r.width - (x1 - x0) * k) / 2 - x0 * k, (r.height - (y1 - y0) * k) / 2 - y0 * k);
+  const k = Math.max(0.45, Math.min(1.1, r.width / (x1 - x0), r.height / (y1 - y0)));
+  // Too big to fit at a readable size: start at the first step instead of centring.
+  const fits = (x1 - x0) * k <= r.width && (y1 - y0) * k <= r.height;
+  const p0 = graph.pos[ids[0]];
+  if (fits) setCam(k, (r.width - (x1 - x0) * k) / 2 - x0 * k, (r.height - (y1 - y0) * k) / 2 - y0 * k);
+  else setCam(k, graph.lr ? 20 - (p0.x - 30) * k : r.width / 2 - (p0.x + graph.W / 2) * k, graph.lr ? r.height / 2 - (p0.y + graph.H / 2) * k : 20 - (p0.y - 30) * k);
 }
 function zoomAt(f, mx, my) {
   const c = cams.get(data.id), r = $("stage").getBoundingClientRect();
@@ -647,8 +654,20 @@ function showTip(id, e) {
 function hideTip() { tip.style.display = "none"; }
 
 // order + table
+const listScroll = () => { const l = $("stage").querySelector(".list"); return l ? l.scrollTop : 0; };
+function keepScroll(top, s) {
+  const l = $("stage").querySelector(".list");
+  if (!l) return;
+  l.scrollTop = top;
+  const row = s && l.querySelector(".sel");
+  if (row && s !== keepScroll.last) {
+    const r = row.getBoundingClientRect(), b = l.getBoundingClientRect();
+    if (r.top < b.top + 40 || r.bottom > b.bottom) row.scrollIntoView({ block: "center" });
+  }
+  keepScroll.last = s;
+}
 function renderOrder() {
-  const { vis } = visibility(), s = sel();
+  const { vis } = visibility(), s = sel(), top = listScroll();
   const rows = data.order.map(id => byId[id]).map(n => {
     const e = entry(n.id);
     const right = [data.areas[n.area] && esc(data.areas[n.area]), n.size && esc(n.size), n.hard && '<span style="color:var(--red)">hard</span>',
@@ -656,7 +675,7 @@ function renderOrder() {
     return `<div class="orow${n.id === s ? " sel" : ""}${vis[n.id].dim ? " dim" : ""}" data-id="${esc(n.id)}" tabindex="0"><span class="n">#${n.order}</span><span class="dot ${n.unpushed ? "unpushed" : n.status}"></span><span class="id">${esc(n.id)}</span><span class="t" title="${esc(n.title)}">${esc(n.title)}</span><span class="r">${right}</span></div>`;
   }).join("");
   $("stage").innerHTML = `<div class="list"><div class="listhead"><b>Dependency order</b><span>One valid build sequence: every step comes after its prerequisites. It is not a priority ranking.</span></div>${rows}</div>`;
-  if (s) $("stage").querySelector(".orow.sel")?.scrollIntoView({ block: "nearest" });
+  keepScroll(top, s);
 }
 
 const COLS = [
@@ -666,7 +685,7 @@ const COLS = [
   ["updated", "Updated", n => (entry(n.id) || {}).updated || ""], ["who", "By", n => (entry(n.id) || {}).who || ""],
 ];
 function renderTable() {
-  const { vis } = visibility(), s = sel();
+  const { vis } = visibility(), s = sel(), top = listScroll();
   const col = COLS.find(c => c[0] === tableSort.key) || COLS[0];
   const rows = data.nodes.slice().sort((a, b) => {
     const x = col[2](a), y = col[2](b);
@@ -683,11 +702,12 @@ function renderTable() {
       <td class="muted small" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small">${esc(e.who || "")}</td></tr>`;
   }).join("");
   $("stage").innerHTML = `<div class="list"><table class="t"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  keepScroll(top, s);
 }
 $("main").addEventListener("click", e => {
   if (!route.project || !data) return;
   const th = e.target.closest("th[data-sort]");
-  if (th) { tableSort = { key: th.dataset.sort, dir: tableSort.key === th.dataset.sort ? -tableSort.dir : 1 }; return renderTable(); }
+  if (th) { tableSort = { key: th.dataset.sort, dir: tableSort.key === th.dataset.sort ? -tableSort.dir : 1 }; renderTable(); $("stage").querySelector(".list").scrollTop = 0; return; }
   const row = e.target.closest(".orow[data-id], tr[data-id]");
   if (row) return selectStep(row.dataset.id === sel() ? null : row.dataset.id);
   if (e.target.closest("[data-hide-legend]")) { prefs.legend = false; savePrefs(); return renderLegend(); }
@@ -770,10 +790,12 @@ function actions(n, e) {
   if (can("done") && s !== "done") b.push(`<button class="btn good" data-act="done">Mark done</button>`);
   if (can("block") && s === "progress") b.push(`<button class="btn" data-act="block">Block</button>`);
   if (can("retry") && (s === "progress" || s === "blocked")) b.push(`<button class="btn" data-act="retry">Retry</button>`);
-  if (can("log")) b.push(`<button class="btn" data-act="log">Add note</button>`);
+  // VELA's CLI starts a step when you log on it, so only offer notes once it has a record.
+  if (can("log") && !(data.log_starts && !data.progress[n.id])) b.push(`<button class="btn" data-act="log">Add note</button>`);
   if (can("reset") && data.progress[n.id]) b.push(`<button class="btn ghost" data-act="reset">Reset…</button>`);
   if (!b.length) return "";
-  return `<div class="actions"><input id="noteIn" maxlength="2000" placeholder="Note for the log (optional, Enter adds it)" aria-label="Note">
+  const noteOnly = b.some(x => x.includes('data-act="log"'));
+  return `<div class="actions"><input id="noteIn" maxlength="2000" placeholder="${noteOnly ? "Note for the log (optional, Enter adds it)" : "Note for the log (optional)"}" aria-label="Note">
     <div class="btns">${b.join("")}</div>${n.unmet.length && s !== "done" ? `<div class="muted small" style="margin-top:6px">${n.unmet.length} prerequisite${n.unmet.length > 1 ? "s are" : " is"} not done yet.</div>` : ""}</div>`;
 }
 
@@ -822,21 +844,22 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-showall]")) return selectStep(null);
 });
 $("main").addEventListener("keydown", e => {
-  if (e.target.id === "noteIn" && e.key === "Enter") { e.preventDefault(); act("log"); }
+  if (e.target.id === "noteIn" && e.key === "Enter") { e.preventDefault(); if (document.querySelector('[data-act="log"]')) act("log"); }
   const g = e.target.closest("li[data-goto]");
   if (g && e.key === "Enter") selectStep(g.dataset.goto, true);
 });
 
 // ------------------------------------------------------------------- log ----
 function renderLog() {
-  const box = $("logsec"), s = sel(), seen = seenLog.has(data.id) ? seenLog.get(data.id) : data.log.length;
+  const box = $("logsec"), s = sel(), latest = data.log.length ? ts(data.log[data.log.length - 1].t) : 0;
+  const seen = seenLog.has(data.id) ? seenLog.get(data.id) : latest;
   if (STATIC && !data.log.length) { box.innerHTML = `<div class="sechead"><h3>Running log</h3></div><div class="empty">No log in this snapshot.</div>`; return; }
   const rows = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s).slice(-200).reverse();
   box.innerHTML = `<div class="sechead"><h3>${s ? `Log · ${esc(s)}` : "Running log"}</h3><span class="muted small">${rows.length}</span>${s ? `<button class="btn ghost small" data-showall style="margin-left:auto;height:24px">All steps</button>` : ""}</div>` +
-    (rows.map(r => `<div class="logrow${r.i >= seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(clock(r.t))}</span>
+    (rows.map(r => `<div class="logrow${ts(r.t) > seen ? " fresh" : ""}"><span class="tm" title="${esc(r.t)}">${esc(clock(r.t))}</span>
       <div class="hd"><a data-goto="${esc(r.step)}">${esc(r.step)}</a>${kindBadge(r.kind)}${r.who ? `<span class="k">${esc(r.who)}</span>` : ""}</div><div class="m">${esc(r.msg)}</div></div>`).join("")
       || `<div class="empty">${s ? "Nothing logged for this step yet." : "No entries yet. Agents add them with the project's CLI."}</div>`);
-  seenLog.set(data.id, data.log.length);
+  seenLog.set(data.id, Math.max(seen, latest || 0));
 }
 
 // ------------------------------------------------------- offline snapshot ----
@@ -860,6 +883,7 @@ function restatus() {
     n.unmet = n.deps.filter(d => !done.has(d));
     c[n.status]++;
   });
+  c.unpushed = data.nodes.filter(n => n.unpushed && n.status === "done").length;
   data.counts = { ...data.counts, ...c };
 }
 
@@ -878,6 +902,8 @@ $("toolbar").addEventListener("click", e => {
   if (v) { prefs.view[data.id] = v.dataset.view; savePrefs(); return renderProject(); }
   const f = e.target.closest("[data-filter]");
   if (f) { filter = filter === f.dataset.filter ? null : f.dataset.filter; return renderProject(); }
+});
+$("chiprow").addEventListener("click", e => {
   const a = e.target.closest("[data-area]");
   if (a) {
     const off = offAreas(), k = a.dataset.area;
@@ -998,6 +1024,7 @@ if (STATIC) {
   setInterval(pollProjects, 10000);
 }
 setInterval(tickLive, 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !STATIC) { pollProject(); pollProjects(); } });
 // keep runtimes and "ago" labels moving
 setInterval(() => { if (route.project && data && data.nodes && data.counts.progress) renderPanel(); if (!route.project) renderHome(); }, 30000);
 addEventListener("resize", () => { if (graph && !cams.has(data.id)) initialView(); });

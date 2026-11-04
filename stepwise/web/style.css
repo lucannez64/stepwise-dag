@@ -44,9 +44,10 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .faint { color: var(--o1); }
 [hidden] { display: none !important; }
 
-.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr); height: 100vh; height: 100dvh; }
+#main { grid-row: 5; }
 .app > * { min-width: 0; }
-.app.home { grid-template-rows: auto auto minmax(0, 1fr); }
+
 
 /* ---------- top bar ---------- */
 .topbar { display: flex; align-items: center; gap: 14px; padding: 7px 12px; min-height: 50px;
@@ -125,7 +126,10 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .tog .sw { width: 8px; height: 8px; border-radius: 50%; }
 .tog .n { font-size: 11px; color: var(--sub0); font-variant-numeric: tabular-nums; }
 .vsep { width: 1px; height: 20px; background: var(--s1); flex: none; }
-.areas { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; min-width: 0; flex: 1; padding: 2px 0; }
+.chiprow { display: flex; align-items: center; gap: 10px; padding: 5px 12px; background: var(--panel); border-bottom: 1px solid var(--s0); }
+.chiprow .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--sub0); font-weight: 650; flex: none; }
+.chiprow #areaHint { flex: none; margin-left: auto; }
+.areas { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; flex: 1; padding: 1px 0; }
 .areas::-webkit-scrollbar { display: none; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px; flex: none;
   border: 1px solid var(--s1); border-radius: 13px; background: var(--card); cursor: pointer; font-size: 12px; white-space: nowrap; }
@@ -371,19 +375,26 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .node.progress .pulse { animation: none; opacity: 0; }
   .logrow.fresh, .toast { animation: none; }
 }
-@media (max-width: 1440px) { .facts .fact.opt { display: none; } }
-@media (max-width: 1100px) { .facts { display: none; } .search input { width: 170px; } }
+/* Smaller screens: the git and load facts get their own line instead of disappearing. */
+@media (max-width: 1440px) {
+  .topbar { flex-wrap: wrap; row-gap: 4px; }
+  .facts { order: 10; flex-basis: 100%; gap: 22px; padding: 2px 0 0 4px; border-top: 1px solid var(--s0); padding-top: 5px;
+    overflow-x: auto; scrollbar-width: none; }
+  .fact { flex-direction: row; gap: 6px; align-items: baseline; }
+}
+@media (max-width: 1100px) { .search input { width: 170px; } #areaHint { display: none; } }
 @media (max-width: 900px) {
   .brand span { display: none; }
   #main { overflow: visible; display: block; }
   .app { height: auto; min-height: 100dvh; grid-template-rows: auto auto auto; }
   .topbar { flex-wrap: wrap; gap: 10px; }
-  .stats { order: 3; width: 100%; overflow-x: auto; gap: 14px; padding-bottom: 2px; }
+  .stats { order: 3; width: 100%; flex-wrap: wrap; gap: 8px 16px; padding-bottom: 2px; overflow: visible; }
   .toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .toolbar::-webkit-scrollbar { display: none; }
   .toolbar > * { flex: none; }
   .search input { width: 150px; }
-  .areas { flex: none; overflow: visible; }
+  .areas { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .chiprow .lbl { display: none; }
   .zoom, #dirBtn, #edgeBtn { display: none; }
   .work { grid-template-columns: 1fr; grid-template-rows: 62vh auto; }
   .resizer { display: none; }

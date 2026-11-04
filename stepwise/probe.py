@@ -10,6 +10,7 @@ Paths may start with ~. Missing files are reported, not raised.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -56,7 +57,8 @@ def repo_facts(repo, commits):
         facts["ahead"] = int(ahead) if ahead and ahead.isdigit() else None
     # Resolve every recorded commit in one call, then list the ones the upstream
     # does not contain in one more call. Everything else resolved is pushed.
-    wanted = sorted({c.strip() for c in commits if isinstance(c, str) and c.strip() and not any(ch.isspace() for ch in c.strip())})
+    # Only hex object names: a literal "HEAD" would mean whatever HEAD is now.
+    wanted = sorted({c.strip() for c in commits if isinstance(c, str) and re.fullmatch(r"[0-9a-fA-F]{4,64}", c.strip())})
     if wanted and upstream:
         out = git(repo, "cat-file", "--batch-check=%(objectname) %(objecttype)",
                   stdin="".join(c + "^{commit}\n" for c in wanted)) or ""
