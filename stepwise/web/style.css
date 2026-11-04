@@ -749,7 +749,7 @@ td.c-meta { display: none; }
 .lvlc { display: none; font-weight: 500; }
 svg.far .lvl { font-size: calc(12px * var(--inv, 1)); }
 svg.far .lvlc { display: inline; }
-svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: calc(13px * var(--inv, 1)); }
+svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: min(calc(13px * var(--inv, 1)), var(--fmax, 26px)); }
 /* table: titles first and readable */
 table.t td.c-title { font-size: 14px; color: var(--text); }
 table.t td { font-size: 12px; } table.t td.c-id { font-size: 12.5px; }
@@ -766,4 +766,21 @@ table.t tbody tr { height: 40px; }
   #moreBtn { width: auto; padding: 0 10px; } #moreBtn .lbl { display: none; }
   #filterSeg { display: none; }
   .toolbar.open #filterSeg { display: flex; }
+}
+
+/* calm default graph: links near active work stay clear */
+.edge.quiet { opacity: .22; } :root[data-theme="latte"] .edge.quiet { opacity: .22 !important; }
+.edge.act { stroke: var(--sub0); opacity: .9; stroke-width: 1.6; }
+/* Latte: small status numbers use darker text tokens */
+:root[data-theme="latte"] .stat.progress b, :root[data-theme="latte"] .counts .prog b { color: #9a5b00; }
+:root[data-theme="latte"] .stat.unpushed b { color: #b3420a; }
+:root[data-theme="latte"] .stat.ready b { color: #1550c8; }
+:root[data-theme="latte"] .stat.blocked b { color: #b00d30; }
+/* home hierarchy */
+.card .top h2 { font-size: 18px; } .big b { font-size: 24px; }
+.card { box-shadow: 0 1px 2px rgb(0 0 0 / .06); }
+.feed .kind { opacity: .75; } .feed .logrow .proj { background: none; padding: 0; color: var(--sub0); }
+@media (max-width: 900px) {
+  table.t tbody tr { height: auto; grid-auto-rows: auto; }
+  table.t td.c-meta, table.t td.c-sortval { white-space: normal; }
 }

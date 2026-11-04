@@ -581,12 +581,12 @@ function buildGraph(sig) {
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
-    const t = lr ? svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL) : svgEl("text", { class: "lvl", x: 8, y: starts[li] + H / 2 + 4 }, gL);
+    const t = lr ? svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL) : svgEl("text", { class: "lvl", x: LEFT - 12, y: starts[li] + H / 2 + 4, "text-anchor": "end" }, gL);
     t.textContent = "L" + lvls[li];
     const done = l.filter(n => n.status === "done").length;
     // Counts fit beside a row label; columns are too narrow, so they get a second line.
     if (lr) svgEl("tspan", { class: "lvlc", x: starts[li], dy: "1.2em" }, t).textContent = `${done}/${l.length}`;
-    else svgEl("tspan", { class: "lvlc", dx: 6 }, t).textContent = `${l.length} steps · ${done} done`;
+    else svgEl("tspan", { class: "lvlc" }, t).textContent = `\u00a0\u00a0${done}/${l.length}`;
   });
   const edges = [];
   for (const n of LN) for (const d of depsOf(n)) {
@@ -624,7 +624,7 @@ function buildGraph(sig) {
     // Far zoom shows only a large id, centred.
     let big = n.id;
     while (big.length > 3 && monoW(big, 26) > W - 16) big = big.slice(0, -2) + "…";
-    svgEl("text", { class: "farid", x: W / 2, y: H / 2 + 8, "text-anchor": "middle" }, g).textContent = big;
+    svgEl("text", { class: "farid", x: W / 2, y: H / 2 + 8, "text-anchor": "middle", style: `--fmax:${(W - 16) / (Math.max(3, big.length) * 0.62)}px` }, g).textContent = big;
     els[n.id] = { g, st };
   }
   graph = { sig, svg, vp, edges, els, pos, W, H, worldW, worldH, lr };
@@ -650,6 +650,7 @@ function buildGraph(sig) {
 function updateGraph() {
   const { vis, f, crit } = visibility();
   const s = sel();
+  const actIds = new Set(data.nodes.filter(n => n.status === "progress" || n.status === "blocked").map(n => n.id));
   const critEdges = new Set(data.critical.slice(1).map((id, i) => data.critical[i] + ">" + id));
   for (const n of data.nodes) {
     const e = graph.els[n.id];
@@ -667,6 +668,7 @@ function updateGraph() {
       else cls += (e.to === s || f.up.has(e.to)) && f.up.has(e.from) ? " up" : (e.from === s || f.down.has(e.from)) && f.down.has(e.to) ? " down" : " dim";
     } else if (critOn) cls += critEdges.has(e.from + ">" + e.to) ? " crit" : " dim";
     else if (vis[e.from].dim || vis[e.to].dim) cls += " dim";
+    else if (!narrowing() && !s) cls += (actIds.has(e.from) || actIds.has(e.to)) ? " act" : " quiet";
     if (vis[e.from].excluded || vis[e.to].excluded) cls += " ex";
     e.el.setAttribute("class", cls);
   }
@@ -749,8 +751,10 @@ function setCam(k, tx, ty) {
   } cams.set(data.id, { k: Math.min(3, Math.max(0.08, k)), tx, ty, sig: graph.sig }); applyCam(); }
 function fitAll() {
   const r = $("stage").getBoundingClientRect();
-  const k = Math.min(1.2, (r.width - 24) / graph.worldW, (r.height - 24) / graph.worldH);
-  setCam(k, (r.width - graph.worldW * k) / 2, (r.height - graph.worldH * k) / 2);
+  // Top-to-bottom plans keep a screen-sized gutter on the left for level summaries.
+  const GUT = graph.lr ? 0 : 110;
+  const k = Math.min(1.2, (r.width - 24 - GUT) / graph.worldW, (r.height - 24) / graph.worldH);
+  setCam(k, GUT + (r.width - GUT - graph.worldW * k) / 2, (r.height - graph.worldH * k) / 2);
 }
 function initialView() {
   const r = $("stage").getBoundingClientRect();
@@ -964,7 +968,11 @@ $("main").addEventListener("click", e => {
   const th = e.target.closest("th[data-sort]");
   if (th) { tableSort = { key: th.dataset.sort, dir: tableSort.key === th.dataset.sort ? -tableSort.dir : 1 }; renderTable(); $("stage").querySelector(".list").scrollTop = 0; return; }
   const row = e.target.closest(".orow[data-id], tr[data-id]");
-  if (row) return selectStep(row.dataset.id === sel() ? null : row.dataset.id);
+  if (row) {
+    const id = row.dataset.id;
+    if (query) { clearSearch(); return selectStep(id, true); }
+    return selectStep(id === sel() ? null : id);
+  }
 });
 $("main").addEventListener("change", e => {
   if (e.target.matches("[data-sortsel]")) { tableSort = { key: e.target.value, dir: 1 }; renderTable(); }
