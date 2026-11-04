@@ -172,7 +172,7 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 /* graph */
 /* links have real contrast (about 3:1) and an arrow toward the dependent step */
 .edge { fill: none; stroke: var(--o1); stroke-width: 1.25; opacity: .55; transition: opacity .15s; marker-end: url(#m-def); }
-:root[data-theme="latte"] .edge { stroke: var(--o2); opacity: .5; }
+:root[data-theme="latte"] .edge:not(.up):not(.down):not(.crit):not(.dim) { stroke: var(--o2); opacity: .5; }
 .edge.up { marker-end: url(#m-up); } .edge.down { marker-end: url(#m-down); } .edge.crit { marker-end: url(#m-crit); }
 .edge.dim { marker-end: none; }
 .mk-def { fill: var(--o1); } :root[data-theme="latte"] .mk-def { fill: var(--o2); }
@@ -211,10 +211,10 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .node text { fill: var(--sub1); font-size: calc(12px * var(--gs, 1)); font-family: var(--sans); }
 .node .tt { fill: var(--sub1); }
 .node .id { font: 650 calc(13px * var(--gs, 1)) var(--mono); fill: var(--text); }
-.node .ord { font: calc(10.5px * var(--gs, 1)) var(--mono); fill: var(--o1); }
-.node .tag { font: 600 calc(10px * var(--gs, 1)) var(--mono); fill: var(--o2); }
-.node .hard { font-size: calc(10px * var(--gs, 1)); font-weight: 700; fill: var(--red); }
-.node .st { font-size: calc(10.5px * var(--gs, 1)); font-weight: 650; }
+.node .ord { font: calc(11px * var(--gs, 1)) var(--mono); fill: var(--sub0); }
+.node .tag { font: 600 calc(11px * var(--gs, 1)) var(--mono); fill: var(--sub0); }
+.node .hard { font-size: calc(11px * var(--gs, 1)); font-weight: 700; fill: var(--red); }
+.node .st { font-size: calc(11.5px * var(--gs, 1)); font-weight: 700; }
 .node .farid { display: none; font: 700 26px var(--mono); fill: var(--text); }
 svg.mid .node .tt2, svg.mid .node .ord, svg.mid .node .tag { display: none; }
 svg.far .node text { display: none; }
@@ -355,7 +355,7 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 /* ---------- home ---------- */
 .homegrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
 .cards { overflow: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-  gap: 16px; align-content: start; align-items: start; }
+  gap: 16px; align-content: start; align-items: stretch; }
 .card { background: var(--card); border: 1px solid var(--s0); border-radius: 12px; box-shadow: var(--shadow);
   padding: 16px; display: flex; flex-direction: column; gap: 12px; cursor: pointer; transition: border-color .15s, transform .15s; }
 .card:hover { border-color: var(--o0); }
@@ -365,7 +365,7 @@ h2 { font-size: 15px; margin: 0 0 4px; }
 .card .top .where { font-size: 11.5px; color: var(--sub0); display: flex; gap: 6px; align-items: center; margin-top: 2px; }
 .card .top .kbd { margin-left: auto; }
 .big { display: flex; align-items: baseline; gap: 8px; }
-.big b { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.big b { font-size: 22px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .big span { color: var(--sub0); }
 .stack { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--s0); }
 /* Only "done" counts as progress; in progress and ready are lighter so 0% never looks partly done. */
@@ -532,7 +532,7 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
 .pop input.switch[type="checkbox"] { flex: none; }
 .pop input.switch[type="checkbox"], .pop .switch { appearance: none; width: 32px; height: 18px; border-radius: 9px; background: var(--s1); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
 .pop .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--base); transition: transform .15s; box-shadow: 0 1px 2px rgb(0 0 0 / .3); }
-.pop .switch:checked { background: var(--blue); }
+.pop .switch:checked, .pop input.switch[type="checkbox"]:checked { background: var(--blue); }
 .pop .switch:checked::after { transform: translateX(14px); }
 .pop .keys { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; font-size: 12px; color: var(--sub1); align-items: center; }
 .pop .keys .kbd { justify-self: end; }
@@ -733,4 +733,9 @@ td.c-meta { display: none; }
 @media (max-width: 900px) {
   table.t tr { grid-template-areas: "id st" "t t" "x x" "m m"; }
   table.t td.c-meta { display: block; grid-area: x; font-size: 12px; color: var(--sub0); }
+}
+
+@media (max-width: 900px) {
+  .toolbar .search { flex: 1 1 100%; }
+  .toolbar .search input { min-height: 44px; }
 }

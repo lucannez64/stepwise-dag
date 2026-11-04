@@ -1120,7 +1120,8 @@ function confirmReset(id) {
 $("main").addEventListener("click", e => {
   if (!route.project || !data) return;
   const g = e.target.closest("[data-goto]");
-  if (g) { e.preventDefault(); return selectStep(g.dataset.goto, true); }
+  // Opening a step from the search results shows its details: the search makes way.
+  if (g) { e.preventDefault(); if (query) clearSearch(); return selectStep(g.dataset.goto, true); }
   const a = e.target.closest("[data-act]");
   if (a) return act(a.dataset.act);
   if (e.target.closest("[data-close]")) return selectStep(null);
