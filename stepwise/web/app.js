@@ -50,7 +50,7 @@ let graph = null;           // built graph for the open project
 let busy = false;
 
 const sel = () => route.step && byId[route.step] ? route.step : null;
-const viewOf = id => prefs.view[id] || "graph";
+const viewOf = id => prefs.view[id] || (matchMedia("(max-width: 900px)").matches ? "order" : "graph");
 const dirOf = id => prefs.dir[id] || (data && data.id === id && data.direction) || "TB";
 const edgesOf = id => prefs.edges[id] || (data && data.id === id && data.edges) || "all";
 const offAreas = () => { if (!areasOff.has(route.project)) areasOff.set(route.project, new Set()); return areasOff.get(route.project); };
@@ -109,6 +109,12 @@ async function pollProject() {
   } catch (e) {
     if (String(e.message) === "not found") { renderProject(); return; }
     hubErr = e.message || "unreachable"; renderChrome();
+    // Nothing shown yet for this project: say so instead of leaving skeletons up.
+    if (route.project === id && (!data || data.id !== id)) {
+      $("main").innerHTML = `<div class="state-msg"><div class="state-card"><h2>Couldn't load ${esc(id)}</h2>
+        <p class="muted">${esc(hubErr)}. The hub may be stopped or this device offline.</p>
+        <div class="btns" style="justify-content:center"><button class="btn primary" data-retry>Retry</button><button class="btn" onclick="location.hash='#/'">All projects</button></div></div></div>`;
+    }
   }
 }
 
@@ -319,6 +325,7 @@ $("main").addEventListener("click", e => {
   const c = e.target.closest(".card[data-go]");
   if (c) go(c.dataset.go);
 });
+$("main").addEventListener("click", e => { if (e.target.closest("[data-retry]")) { $("main").innerHTML = ""; renderProject(); pollProject(); } });
 $("main").addEventListener("keydown", e => { const c = e.target.closest(".card[data-go]"); if (c && e.key === "Enter") go(c.dataset.go); });
 const kindBadge = k => k ? `<span class="kind ${esc(k)}">${esc(k === "undo" ? "reset" : k)}</span>` : "";
 
@@ -833,6 +840,10 @@ function overview() {
   const problems = data.problems && data.problems.length ? `<div class="errbox"><b>Plan problems</b><br>${data.problems.map(esc).join("<br>")}</div>` : "";
   const q = query.toLowerCase(), hits = q ? data.order.map(id => byId[id]).filter(n => matches(n, q)) : [];
   const found = q ? `<h3 style="margin-top:2px">Matches · ${hits.length}</h3>${linkList(hits.slice(0, 20).map(n => n.id), "No step matches.")}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  // An active filter lists its steps first, so results stay readable whatever the zoom.
+  const fl = filter ? data.order.map(id => byId[id]).filter(n => n.status === filter) : critOn ? data.critical.map(id => byId[id]) : [];
+  const flist = filter || critOn ? `<h3 style="margin-top:2px">${critOn && !filter ? (data.critical_computed ? "Longest chain" : "Critical path") : LABEL[filter][0].toUpperCase() + LABEL[filter].slice(1)} · ${fl.length}</h3>${linkList(fl.map(n => n.id), "No steps.", !critOn)}` : "";
+  if (flist && !q) return `${problems}${flist}<p class="muted small">Click a step to see its details. Fit shows the whole graph.</p>`;
   return `${problems}${found}
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
     ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
@@ -847,6 +858,8 @@ function overview() {
       : `Live from ${esc(data.machine || data.host)} (${esc(data.format)} plan). Changes made by agents with the project's CLI show up within seconds. <a href="export/${encodeURIComponent(data.id)}.html">Download an offline snapshot</a>`}</p>`;
 }
 
+let detailsOpen = false;
+document.addEventListener("toggle", e => { if (e.target.matches && e.target.matches("details.more")) detailsOpen = e.target.open; }, true);
 function detail(n) {
   const e = entry(n.id) || {}, s = n.status;
   const crit = data.critical.includes(n.id);
@@ -870,13 +883,13 @@ function detail(n) {
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
     ${actions(n, e)}
-    ${meta}
-    ${e.note && e.note !== n.check ? `<div class="note">${esc(e.note)}</div>` : ""}${commit}
+    ${e.note && e.note !== n.check ? `<div class="note">${esc(e.note)}</div>` : ""}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
     ${conflict}${unmet}${check}${desc}${noCheck}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
     <p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>
+    <details class="more"${detailsOpen ? " open" : ""}><summary>Details</summary>${meta}${commit}</details>
     ${stepLog(n.id)}`;
 }
 
@@ -1037,7 +1050,7 @@ $("toolbar").addEventListener("click", e => {
   if (f) {
     filter = f.dataset.filter || null;
     renderProject();
-    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.nodes.filter(n => n.status === filter).map(n => n.id));
+    if (filter && graph && viewOf(data.id) === "graph") fitNodes(data.order.filter(id => byId[id].status === filter), 0.8, 1);
     return;
   }
 });
@@ -1062,7 +1075,7 @@ $("areaMenu").addEventListener("change", e => {
   box.checked ? off.delete(box.dataset.area) : off.add(box.dataset.area);
   renderProject();
 });
-$("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical); };
+$("critBtn").onclick = () => { critOn = !critOn; renderProject(); if (critOn && graph && !sel()) fitNodes(data.critical, 0.8, 1); };
 $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "direct" ? "all" : "direct"; savePrefs(); renderProject(); };
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
