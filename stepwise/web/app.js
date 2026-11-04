@@ -294,7 +294,7 @@ function renderHome() {
       <div class="${p.loading ? "empty" : "errbox"}">${p.loading ? "Loading…" : esc(p.error)}</div></article>`;
     const pct = c.total ? Math.round(100 * c.done / c.total) : 0;
     const active = p.active.map(a => `<li><span class="dot ${a.status}"></span><span class="t"><span class="id">${esc(a.id)}</span> ${esc(a.title)}</span><span class="s">${a.status === "blocked" ? "blocked" : since(a)}</span></li>`).join("");
-    const ready = p.ready.slice(0, 4).map(a => `<li><span class="dot ready"></span><span class="t"><span class="id">${esc(a.id)}</span> ${esc(a.title)}</span><span></span></li>`).join("");
+    const ready = p.ready.slice(0, p.active.length ? 3 : 4).map(a => `<li><span class="dot ready"></span><span class="t"><span class="id">${esc(a.id)}</span> ${esc(a.title)}</span><span></span></li>`).join("");
     const r = p.repo;
     const sw = (col, n, l) => `<span><i class="sw" style="background:var(--${col})"></i><b>${n}</b> ${l}</span>`;
     return `<article class="card" tabindex="0" data-go="${esc(p.id)}" aria-label="Open ${esc(p.title)}">
@@ -437,14 +437,14 @@ function renderStage(routeOnly) {
   if (v === "graph" && !anyShown && !q) {
     if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
     nm.innerHTML = `No steps match these filters. <button class="btn ghost small" data-reset-filters>Reset filters</button>`;
-  } else if (q && !n) {
+  } else if (v === "graph" && q && !n) {
     if (!nm) { nm = document.createElement("div"); nm.className = "nomatch"; $("stage").appendChild(nm); }
     nm.innerHTML = `No step matches “${esc(query)}”. <button class="btn ghost small" data-clear-q>Clear search</button>`;
   } else nm?.remove();
 }
 
 function layoutSig() {
-  return JSON.stringify([data.id, dirOf(data.id), prefs.density, prefs.sizes, data.nodes.map(n => [n.id, n.deps, n.level, n.order, n.area])]);
+  return JSON.stringify([data.id, dirOf(data.id), prefs.density, prefs.sizes, prefs.text, data.nodes.map(n => [n.id, n.deps, n.level, n.order, n.area])]);
 }
 
 const measure = (() => {
@@ -466,9 +466,10 @@ function wrap2(text, width, size = 11) {
 function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
-  const W = comfy ? 252 : 236, H = comfy ? 62 : 58;
+  const G = prefs.text / 100;  // text size scales the cards too
+  const W = Math.round((comfy ? 252 : 236) * G), H = Math.round((comfy ? 62 : 58) * G);
   const lr = dirOf(data.id) === "LR";
-  const GAPX = lr ? 64 : 22, GAPY = lr ? 12 : 58;
+  const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
   const levels = [];
   data.nodes.forEach(n => (levels[n.level] ||= []).push(n));
@@ -489,7 +490,7 @@ function buildGraph(sig) {
   }
   // Wide levels wrap into bands (rows of 10 top to bottom, columns of 14 left to right),
   // so "fit" stays readable on plans with many independent steps.
-  const SUB = lr ? 20 : 16, TOP = 44, LEFT = 44;
+  const SUB = lr ? 20 : 16, TOP = 44, LEFT = 60;
   // Pick the band size whose overall shape best matches the stage, so "fit" stays as large as possible.
   const longest = Math.max(1, ...levels.map(l => l.length));
   const sr = $("stage").getBoundingClientRect();
@@ -512,7 +513,8 @@ function buildGraph(sig) {
     const bands = [];
     for (let i = 0; i < l.length; i += WRAP) bands.push(l.slice(i, i + WRAP));
     bands.forEach((band, bi) => band.forEach((n, i) => {
-      if (lr) pos[n.id] = { x: cursor + bi * (W + SUB), y: TOP + i * (H + GAPY) };
+      // Shorter columns sit centred against the tallest, as in the original VELA view.
+      if (lr) pos[n.id] = { x: cursor + bi * (W + SUB), y: TOP + (across - band.length) * (H + GAPY) / 2 + i * (H + GAPY) };
       else pos[n.id] = { x: LEFT + (across - band.length) * (W + GAPX) / 2 + i * (W + GAPX), y: cursor + bi * (H + SUB) };
     }));
     cursor += bands.length * ((lr ? W : H) + SUB) - SUB + (lr ? GAPX : GAPY);
@@ -521,7 +523,7 @@ function buildGraph(sig) {
   const worldH = lr ? TOP + across * (H + GAPY) + 24 : cursor;
 
   stage.innerHTML = `<div class="dotgrid"></div>`;
-  const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph` }, stage);
+  const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph`, style: `--gs:${G}` }, stage);
   const vp = svgEl("g", {}, svg);
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
@@ -533,7 +535,9 @@ function buildGraph(sig) {
   for (const n of data.nodes) for (const d of n.deps) {
     const a = pos[d], b = pos[n.id];
     let p;
-    if (lr) { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, c = Math.max(28, (x2 - x1) / 2); p = `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`; }
+    // Bend points vary a little per edge, so parallel links fan out instead of stacking.
+    const fan = 0.36 + 0.28 * ((edges.length * 7) % 5) / 4;
+    if (lr) { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, c = Math.max(28, (x2 - x1) * fan); p = `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`; }
     else { const x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y, c = Math.max(24, (y2 - y1) / 2); p = `M${x1},${y1} C${x1},${y1 + c} ${x2},${y2 - c} ${x2},${y2}`; }
     edges.push({ from: d, to: n.id, el: svgEl("path", { class: "edge", d: p }, gE) });
   }
@@ -545,21 +549,21 @@ function buildGraph(sig) {
     svgEl("rect", { class: "box", width: W, height: H, rx: 7 }, g);
     svgEl("rect", { x: 4, y: 6, width: 3, height: H - 12, rx: 1.5, fill: areaColor(n.area) }, g);
     let cx = 14;
-    const ord = svgEl("text", { class: "ord", x: cx, y: 19 }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5) + 6;
-    const idt = svgEl("text", { class: "id", x: cx, y: 19 }, g);
-    const st = svgEl("text", { class: "st", x: W - 9, y: 19, "text-anchor": "end" }, g);
+    const ord = svgEl("text", { class: "ord", x: cx, y: 19 * G }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5 * G) + 6;
+    const idt = svgEl("text", { class: "id", x: cx, y: 19 * G }, g);
+    const st = svgEl("text", { class: "st", x: W - 9, y: 19 * G, "text-anchor": "end" }, g);
     // fit the id, size and hard tags, leaving room for the longest status word
-    const STATUS_ROOM = monoW("✕ unpushed", 10.5) + 8;
+    const STATUS_ROOM = monoW("✕ unpushed", 10.5 * G) + 8;
     const room = W - 9 - STATUS_ROOM - cx;
     let id = n.id;
-    if (monoW(id, 13) > room) { while (id.length > 3 && monoW(id + "…", 13) > room) id = id.slice(0, -1); id += "…"; }
-    idt.textContent = id; cx += monoW(id, 13) + 6;
+    if (monoW(id, 13 * G) > room) { while (id.length > 3 && monoW(id + "…", 13 * G) > room) id = id.slice(0, -1); id += "…"; }
+    idt.textContent = id; cx += monoW(id, 13 * G) + 6;
     const limit = W - 9 - STATUS_ROOM;
-    if (prefs.sizes && n.size && cx + monoW(n.size, 10) <= limit) { svgEl("text", { class: "tag", x: cx, y: 19 }, g).textContent = n.size; cx += monoW(n.size, 10) + 6; }
-    if (n.hard && cx + 24 <= limit) { svgEl("text", { class: "hard", x: cx, y: 19 }, g).textContent = "hard"; cx += 28; }
-    const [l1, l2] = wrap2(n.title, W - 24, 12);
-    svgEl("text", { class: "tt", x: 14, y: comfy ? 38 : 36 }, g).textContent = l1;
-    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: comfy ? 53 : 50 }, g).textContent = l2;
+    if (prefs.sizes && n.size && cx + monoW(n.size, 10 * G) <= limit) { svgEl("text", { class: "tag", x: cx, y: 19 * G }, g).textContent = n.size; cx += monoW(n.size, 10 * G) + 6; }
+    if (n.hard && cx + 24 * G <= limit) { svgEl("text", { class: "hard", x: cx, y: 19 * G }, g).textContent = "hard"; cx += 28 * G; }
+    const [l1, l2] = wrap2(n.title, W - 24, 12 * G);
+    svgEl("text", { class: "tt", x: 14, y: (comfy ? 38 : 36) * G }, g).textContent = l1;
+    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: (comfy ? 53 : 50) * G }, g).textContent = l2;
     // Far zoom shows only a large id, centred.
     let big = n.id;
     while (big.length > 3 && monoW(big, 26) > W - 16) big = big.slice(0, -2) + "…";
@@ -751,7 +755,10 @@ function showTip(id, e) {
 function hideTip() { tip.style.display = "none"; }
 
 // order + table
-const noRows = () => `<div class="state-msg" style="height:auto;padding:48px 16px"><div class="state-card"><h2>No steps match</h2><p class="muted">The search or filters hide every step.</p><button class="btn" data-reset-filters>Reset filters</button></div></div>`;
+const noRows = () => {
+  const onlySearch = query && !filter && !critOn && !offAreas().size;
+  return `<div class="state-msg" style="height:auto;padding:48px 16px"><div class="state-card"><h2>No steps match</h2><p class="muted">${onlySearch ? `Nothing matches “${esc(query)}”.` : "The search or filters hide every step."}</p><button class="btn" ${onlySearch ? "data-clear-q" : "data-reset-filters"}>${onlySearch ? "Clear search" : "Reset filters"}</button></div></div>`;
+};
 const listScroll = () => { const l = $("stage").querySelector(".list"); return l ? l.scrollTop : 0; };
 function keepScroll(top, s) {
   const l = $("stage").querySelector(".list");
@@ -848,14 +855,14 @@ function overview() {
     ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
     ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
     <h3 ${prog.length || blocked.length ? "" : 'style="margin-top:2px"'}>Ready to start · ${ready.length}</h3>
-    ${linkList(ready.slice(0, 12).map(n => n.id), "Nothing is ready: every open step waits on a prerequisite.", true)}
-    ${ready.length > 12 ? `<button class="btn ghost small" data-filter-ready style="margin-top:4px">Show all ${ready.length} ready steps</button>` : ""}
+    ${linkList(ready.slice(0, 6).map(n => n.id), "Nothing is ready: every open step waits on a prerequisite.", true)}
+    ${ready.length > 6 ? `<button class="btn ghost small" data-filter-ready style="margin-top:4px">Show all ${ready.length} ready steps</button>` : ""}
     <p class="muted small">Ready means every prerequisite is recorded as done. It is not a priority order.</p>
     <h3>${data.critical_computed ? "Longest chain" : "Critical path"} · ${data.critical.length} steps</h3>
     ${linkList(data.critical)}
     ${data.critical_computed ? `<p class="muted small">Counted in steps, not time.</p>` : ""}
     <p class="muted small" style="margin-top:16px">${STATIC ? "Offline snapshot. Mark done here to plan; marks stay in this browser."
-      : `Live from ${esc(data.machine || data.host)} (${esc(data.format)} plan). Changes made by agents with the project's CLI show up within seconds. <a href="export/${encodeURIComponent(data.id)}.html">Download an offline snapshot</a>`}</p>`;
+      : `Live from ${esc(data.machine || data.host)} (${esc(data.format)} plan). Changes made by agents with the project's CLI show up within seconds.`}</p>`;
 }
 
 let detailsOpen = false;
@@ -924,7 +931,7 @@ async function act(action) {
   if (action === "log" && !msg) { input && input.focus(); return toast("Write a note first"); }
   if (action === "reset" && !(await confirmReset(id))) return;
   busy = true;
-  document.querySelectorAll("[data-act]").forEach(b => b.disabled = true);
+  document.querySelectorAll("[data-act]").forEach(b => { b.disabled = true; b.classList.toggle("busy", b.dataset.act === action); });
   try {
     const r = await fetch("api/project/" + encodeURIComponent(data.id) + "/step", {
       method: "POST", headers: { "Content-Type": "application/json", "X-Stepwise": "1" },
@@ -961,6 +968,7 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-filter-ready]")) { filter = "ready"; return renderProject(); }
   if (e.target.closest("[data-local]")) { toggleStatic(sel()); return; }
   if (e.target.closest("[data-showall]")) return selectStep(null);
+  if (e.target.closest("[data-more-log]")) { logLimit += 50; return renderLog(); }
   if (e.target.closest("[data-clear-q]")) { $("q").value = query = ""; return renderStage(); }
   if (e.target.closest("[data-reset-filters]")) { $("q").value = query = ""; filter = null; critOn = false; offAreas().clear(); return renderProject(); }
 });
@@ -979,6 +987,7 @@ function stepLog(id) {
   const rows = data.log.filter(r => r.step === id).slice(-200).reverse();
   return `<h3>Log · ${rows.length}</h3>${rows.length ? `<div class="steplog">${logRowsHtml(rows, Infinity)}</div>` : `<div class="empty">Nothing logged for this step yet.</div>`}`;
 }
+let logLimit = 20;
 function renderLog() {
   const box = $("logsec"), s = sel(), latest = data.log.length ? ts(data.log[data.log.length - 1].t) : 0;
   // With a step selected, its own log sits at the end of the details, so they get the whole column.
@@ -986,9 +995,12 @@ function renderLog() {
   if (s) return;
   const seen = seenLog.has(data.id) ? seenLog.get(data.id) : latest;
   if (STATIC && !data.log.length) { box.innerHTML = `<div class="sechead"><h3>Running log</h3></div><div class="empty">No log in this snapshot.</div>`; return; }
-  const rows = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s).slice(-200).reverse();
+  // Phones show a short log by default so the page stays short.
+  const cap = matchMedia("(max-width: 900px)").matches ? logLimit : 200;
+  const all = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s);
+  const rows = all.slice(-cap).reverse();
   box.innerHTML = `<div class="sechead"><h3>${s ? `Log · ${esc(s)}` : "Running log"}</h3><span class="muted small">${rows.length}</span>${s ? `<button class="btn ghost small" data-showall style="margin-left:auto;height:24px">All steps</button>` : ""}</div>` +
-    (logRowsHtml(rows, seen)
+    (logRowsHtml(rows, seen) + (all.length > rows.length && cap < 200 ? `<button class="btn ghost small" data-more-log style="margin-top:8px">Show ${Math.min(50, all.length - rows.length)} more</button>` : "")
       || `<div class="empty">${s ? "Nothing logged for this step yet." : "No entries yet. Agents add them with the project's CLI."}</div>`);
   seenLog.set(data.id, Math.max(seen, latest || 0));
 }
@@ -1118,7 +1130,8 @@ function renderPrefs() {
     ${sw("legend", prefs.legend, "Legend in the status bar")}
     ${p ? `<h3>${esc(data.title)}</h3>
     <div class="prow"><span>Direction</span>${seg("dir", dirOf(data.id), [["TB", "Top ↓"], ["LR", "Left →"]])}</div>
-    <div class="prow"><span>On select</span>${seg("edges", edgesOf(data.id), [["all", "Whole chain"], ["direct", "Direct"]])}</div>` : ""}
+    <div class="prow"><span>On select</span>${seg("edges", edgesOf(data.id), [["all", "Whole chain"], ["direct", "Direct"]])}</div>
+    ${STATIC ? "" : `<a class="btn small" style="margin-top:4px" href="export/${encodeURIComponent(data.id)}.html">Download offline snapshot</a>`}` : ""}
     <h3>Keys</h3><div class="keys">${[["/", "Find a step"], ["0–9", "Switch project"], ["g o t", "Graph, order, table"], ["f", "Fit everything"], ["c", "Critical path"], ["e", "Direct edges"], ["d", "Direction"], ["Esc", "Clear selection"]]
       .map(([k, l]) => `<span>${l}</span><span class="kbd">${k}</span>`).join("")}</div>
     <div class="btns"><button class="btn ghost small" id="pReset">Reset view settings</button></div>`;
@@ -1134,6 +1147,7 @@ function renderPrefs() {
     if (i.dataset.pref === "sizes") rerenderGraph(); else renderLegend();
   }));
   $("pText").addEventListener("input", e => { prefs.text = +e.target.value; savePrefs(); applyPrefs(); });
+  $("pText").addEventListener("change", () => rerenderGraph());
   $("pReset").addEventListener("click", () => { prefs = { ...DEFAULTS, dir: {}, edges: {}, view: {} }; savePrefs(); applyPrefs(); renderPrefs(); rerenderGraph(); });
 }
 function rerenderGraph() { graph = null; if (route.project && data && data.nodes) renderProject(); }

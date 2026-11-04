@@ -519,6 +519,9 @@ def serve(cfg, base, port, hosts, names=()):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                             "style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
