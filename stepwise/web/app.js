@@ -854,7 +854,7 @@ function renderTable() {
     const x = col[2](a), y = col[2](b);
     return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * tableSort.dir || a.order - b.order;
   });
-  const head = COLS.map(c => `<th class="c-${c[0]}" data-sort="${c[0]}" aria-sort="${tableSort.key === c[0] ? (tableSort.dir > 0 ? "ascending" : "descending") : "none"}">${c[1]}${tableSort.key === c[0] ? ` <span class="ar">${tableSort.dir > 0 ? "↑" : "↓"}</span>` : ""}</th>`).join("");
+  const head = COLS.map(c => `<th class="c-${c[0]}" data-sort="${c[0]}" aria-sort="${tableSort.key === c[0] ? (tableSort.dir > 0 ? "ascending" : "descending") : "none"}"><button class="sortbtn">${c[1]}${tableSort.key === c[0] ? ` <span class="ar">${tableSort.dir > 0 ? "↑" : "↓"}</span>` : ""}</button></th>`).join("");
   const body = rows.map(n => {
     const e = entry(n.id) || {};
     return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}" tabindex="0">
@@ -893,9 +893,15 @@ function renderPanel() {
   // The table needs the width; its overview panel comes back when a row is selected.
   $("work").classList.toggle("wide", viewOf(data.id) === "table" && !s);
   const focused = document.activeElement && document.activeElement.id === "noteIn";
-  const draft = $("noteIn") ? $("noteIn").value : "";
+  // An unsent note belongs to its step, so it never follows the selection elsewhere.
+  if ($("noteIn") && $("noteIn").dataset.key) drafts.set($("noteIn").dataset.key, $("noteIn").value);
   p.innerHTML = s ? detail(byId[s]) : overview();
-  if ($("noteIn")) { $("noteIn").value = draft; if (focused) $("noteIn").focus(); }
+  if ($("noteIn")) {
+    const key = data.id + "/" + s;
+    $("noteIn").dataset.key = key; $("noteIn").value = drafts.get(key) || "";
+    $("noteIn").oninput = () => drafts.set(key, $("noteIn").value);
+    if (focused) $("noteIn").focus();
+  }
   p.scrollTop = keep;
 }
 
@@ -929,6 +935,7 @@ function overview() {
 }
 
 let detailsOpen = false;
+const drafts = new Map();
 document.addEventListener("toggle", e => { if (e.target.matches && e.target.matches("details.more")) detailsOpen = e.target.open; }, true);
 function detail(n) {
   const e = entry(n.id) || {}, s = n.status;
@@ -948,7 +955,7 @@ function detail(n) {
   const check = n.check ? `<h3>Done when</h3><div class="check">${esc(n.check)}</div>` : "";
   const desc = n.desc ? `<h3>${n.check ? "Notes" : "Description"}</h3><div class="check">${esc(n.desc)}</div>` : "";
   const noCheck = !n.check && !n.desc ? `<h3>Done when</h3><div class="check empty">No completion check written for this step.</div>` : "";
-  return `<button class="grab" data-close aria-label="Close details"></button><div class="dhead"><span class="idl">${esc(n.id)}</span><button class="iconbtn x" data-close aria-label="Close details" title="Close (Esc)">✕</button></div>
+  return `<button class="grab" data-grow aria-label="Make the details taller or shorter"></button><div class="dhead"><span class="idl">${esc(n.id)}</span><button class="iconbtn x" data-close aria-label="Close details" title="Close (Esc)">✕</button></div>
     <div class="dtitle">${esc(n.title)}</div>
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
@@ -1002,7 +1009,7 @@ async function act(action) {
     });
     const body = await r.json();
     if (!r.ok) throw new Error(body.error || r.status);
-    if (input) input.value = "";
+    if (input) { input.value = ""; drafts.delete(data.id + "/" + id); }
     lastFetch = Date.now();
     setData(body);
     toast({ start: `${id} started`, done: `${id} marked done`, block: `${id} blocked`, retry: `${id} retried`, log: "Note added", reset: `${id} reset` }[action]);
@@ -1033,7 +1040,8 @@ $("main").addEventListener("click", e => {
   if (e.target.closest("[data-showall]")) return selectStep(null);
   if (e.target.closest("[data-more-log]")) { logLimit += 50; return renderLog(); }
   if (e.target.closest("[data-log-toggle]")) { logOpen = !logOpen; return renderLog(); }
-  if (e.target.closest("[data-clear-q]")) { $("q").value = query = ""; return renderStage(); }
+  if (e.target.closest("[data-grow]")) { $("app").classList.toggle("tall"); return; }
+  if (e.target.closest("[data-clear-q]")) return clearSearch();
   if (e.target.closest("[data-reset-filters]")) { $("q").value = query = ""; filter = null; critOn = false; offAreas().clear(); return renderProject(); }
 });
 $("main").addEventListener("keydown", e => {
@@ -1064,6 +1072,7 @@ function renderLog() {
   const all = data.log.map((r, i) => ({ ...r, i })).filter(r => !s || r.step === s);
   const rows = all.slice(-cap).reverse();
   box.classList.toggle("open", logOpen);
+  box.classList.toggle("collapsed", !logOpen && !phone());
   box.innerHTML = `<div class="sechead"><h3>Running log</h3><span class="muted small">${all.length}</span><button class="btn ghost small" data-log-toggle style="margin-left:auto;height:24px" aria-expanded="${logOpen}">${logOpen ? "Collapse" : "Expand"}</button></div>` +
     (logRowsHtml(rows, seen) + (all.length > rows.length && cap < 200 ? `<button class="btn ghost small" data-more-log style="margin-top:8px">Show ${Math.min(50, all.length - rows.length)} more</button>` : "")
       || `<div class="empty">${s ? "Nothing logged for this step yet." : "No entries yet. Agents add them with the project's CLI."}</div>`);
@@ -1113,7 +1122,7 @@ $("q").addEventListener("keydown", e => {
     const m = data.nodes.find(n => n.id.toLowerCase() === q) || data.order.map(id => byId[id]).find(n => matches(n, q));
     if (m) selectStep(m.id, true);
   }
-  if (e.key === "Escape") { $("q").value = query = ""; renderStage(); $("q").blur(); }
+  if (e.key === "Escape") { clearSearch(); $("q").blur(); }
 });
 $("toolbar").addEventListener("click", e => {
   if (!data || !data.nodes) return;
@@ -1161,7 +1170,8 @@ $("zFocus").onclick = () => focusWork();
 $("actPrev").onclick = () => stepActive(-1);
 $("actNext").onclick = () => stepActive(1);
 $("moreBtn").onclick = () => { const o = !$("toolbar").classList.contains("open"); $("toolbar").classList.toggle("open", o); $("moreBtn").setAttribute("aria-expanded", o); };
-$("qClear").onclick = () => { $("q").value = query = ""; renderStage(); $("q").focus(); };
+function clearSearch() { $("q").value = query = ""; if (data && data.nodes) { renderStage(); renderPanel(); } }
+$("qClear").onclick = () => { clearSearch(); $("q").focus(); };
 $("dirBtn").onclick = () => { prefs.dir[data.id] = dirOf(data.id) === "LR" ? "TB" : "LR"; savePrefs(); graph = null; renderProject(); };
 
 function bindResizer() {
