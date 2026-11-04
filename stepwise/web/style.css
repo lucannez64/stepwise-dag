@@ -170,7 +170,13 @@ code, .mono { font-family: var(--mono); font-size: .92em; }
 .sechead h3 { margin: 0; }
 
 /* graph */
-.edge { fill: none; stroke: var(--s2); stroke-width: 1.2; opacity: .32; transition: opacity .15s; }
+/* links have real contrast (about 3:1) and an arrow toward the dependent step */
+.edge { fill: none; stroke: var(--o1); stroke-width: 1.25; opacity: .8; transition: opacity .15s; marker-end: url(#m-def); }
+:root[data-theme="latte"] .edge { stroke: var(--o2); opacity: .7; }
+.edge.up { marker-end: url(#m-up); } .edge.down { marker-end: url(#m-down); } .edge.crit { marker-end: url(#m-crit); }
+.edge.dim { marker-end: none; }
+.mk-def { fill: var(--o1); } :root[data-theme="latte"] .mk-def { fill: var(--o2); }
+.mk-up { fill: var(--needs); } .mk-down { fill: var(--unblocks); } .mk-crit { fill: var(--crit); }
 .edge.hov { stroke: var(--o2); stroke-width: 2; opacity: 1; }
 .node.hov .box { stroke: var(--o2); }
 .edge.up { stroke: var(--needs); stroke-width: 2.3; opacity: 1; }
@@ -710,3 +716,14 @@ svg.far .node.progress .farid, svg.far .node.blocked .farid { font-size: 34px; }
   .sortbar .btn { min-height: 40px; margin-left: auto; }
 }
 .nomatch, .nomatch h2 { color: var(--text); opacity: 1; }
+
+/* what the highlighted links mean, at any width */
+.edgekey { position: absolute; top: 10px; left: 12px; z-index: 4; display: flex; gap: 14px; padding: 6px 10px; border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--s1); font-size: 11.5px; color: var(--sub1); box-shadow: var(--shadow); }
+.edgekey span { display: inline-flex; gap: 6px; align-items: center; } .edgekey i { width: 16px; border-top: 2.5px solid; }
+td.c-sortval { display: none; }
+@media (max-width: 900px) {
+  table.t tr { grid-template-areas: "id st" "t t" "m m"; }
+  table.t td.c-sortval { display: block; grid-area: m; font-size: 12px; color: var(--sub0); }
+  .edgekey { top: 6px; left: 6px; right: 6px; justify-content: center; }
+}

@@ -391,7 +391,7 @@ function renderToolbar() {
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
   const v = viewOf(data.id);
   document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === v));
-  $("zFocus").textContent = sel() ? "Fit related" : "Focus";
+  $("zFocus").textContent = sel() ? "Fit related" : "Focus active";
   $("zFocus").title = sel() ? "Fit the selected step and its direct links (w)" : "Focus the work in progress (w)";
   const act = activeSteps();
   $("actNav").hidden = v !== "graph" || act.length < 2;
@@ -448,6 +448,7 @@ function renderStage(routeOnly) {
     if (!graph || graph.sig !== sig || !stage.querySelector("svg.g")) buildGraph(sig);
     updateGraph();
     keepFramed();
+    requestAnimationFrame(() => keepFramed());
   } else {
     graph = null;
     if (v === "order") renderOrder(); else renderTable();
@@ -568,6 +569,11 @@ function buildGraph(sig) {
   canvasBar().hidden = !layoutNodes().length;
   const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph`, style: `--gs:${G}` }, stage);
   const vp = svgEl("g", {}, svg);
+  const defs = svgEl("defs", {}, svg);
+  for (const k of ["def", "up", "down", "crit"]) {
+    const m = svgEl("marker", { id: "m-" + k, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 7, markerHeight: 7, orient: "auto-start-reverse", markerUnits: "userSpaceOnUse" }, defs);
+    svgEl("path", { d: "M0,1 L10,5 L0,9 z", class: "mk mk-" + k }, m);
+  }
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
@@ -657,6 +663,11 @@ function updateGraph() {
     e.el.setAttribute("class", cls);
   }
   graph.svg.classList.toggle("hide-ex", narrowing() && !showContext);
+  let key = $("stage").querySelector(".edgekey");
+  if (s && !query) {
+    if (!key) { key = document.createElement("div"); key.className = "edgekey"; $("stage").appendChild(key); }
+    key.innerHTML = `<span><i style="border-color:var(--needs)"></i>needs (before ${esc(s)})</span><span><i style="border-color:var(--unblocks)"></i>unblocks (after ${esc(s)})</span>`;
+  } else key?.remove();
   $("ctxBtn").hidden = !narrowing();
   $("ctxBtn").setAttribute("aria-pressed", showContext);
   renderLegend();
@@ -748,6 +759,7 @@ function focusWork() {
   if (!act.length) return fitAll();
   const near = new Set();
   act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
+  if (phone()) return focusNode(act.sort((a, b) => a.order - b.order)[0].id);
   fitNodes([...near], 1, 1);
 }
 function fitRelated(id) {
@@ -785,7 +797,9 @@ function focusNode(id) {
   if (!graph || !graph.pos[id]) return;
   const r = $("stage").getBoundingClientRect(), c = cams.get(data.id) || { k: 1 };
   const k = Math.max(c.k, 1), p = graph.pos[id];
-  setCam(k, r.width / 2 - (p.x + graph.W / 2) * k, r.height / 2 - (p.y + graph.H / 2) * k);
+  // On a phone the step sits near the top, so its dependents show below it.
+  const ty = phone() ? 24 - p.y * k : r.height / 2 - (p.y + graph.H / 2) * k;
+  setCam(k, r.width / 2 - (p.x + graph.W / 2) * k, ty);
 }
 
 function bindGraph(svg) {
@@ -833,7 +847,9 @@ function bindGraph(svg) {
     if (pinch) { if (pts.size < 2) pinch = null; return; }
     if (drag && !drag.moved) {
       const id = drag.node && drag.node.dataset.id;
-      selectStep(id && id !== sel() ? id : null);
+      const far = cams.get(data.id).k < 0.5;
+      selectStep(id && (id !== sel() || far) ? id : null);
+      if (id && far) fitRelated(id);
     }
     drag = null; stage.classList.remove("drag");
   };
@@ -924,6 +940,7 @@ function renderTable() {
       <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
       <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
+      ${["order", "id", "title", "status"].includes(tableSort.key) ? "" : `<td class="c-sortval">${esc((COLS.find(c => c[0] === tableSort.key) || COLS[0])[1])}: ${esc(String((COLS.find(c => c[0] === tableSort.key) || COLS[0])[2](n)))}</td>`}
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
   }).join("");
   const sortSel = `<div class="sortbar"><label>Sort by <select data-sortsel>${COLS.map(c => `<option value="${c[0]}"${c[0] === tableSort.key ? " selected" : ""}>${c[1]}</option>`).join("")}</select></label><button class="btn small" data-sortdir>${tableSort.dir > 0 ? "↑ Ascending" : "↓ Descending"}</button></div>`;
