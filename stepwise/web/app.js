@@ -227,8 +227,17 @@ function renderChrome() {
       <span class="fact" title="Git worktrees"><b>${r.worktrees}</b><span>worktrees</span></span>` : ""}`;
   } else $("facts").innerHTML = "";
   tickLive();
-  // banner
-  const b = $("banner");
+  renderBanner();
+}
+function renderBanner() {
+  const home = !route.project, b = $("banner");
+  b.classList.toggle("bad", false);
+  if (!STATIC && hubErr && Date.now() - hubOk > 8000) {
+    b.hidden = false; b.classList.add("bad");
+    const when = lastFetch ? new Date(lastFetch).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+    b.innerHTML = `<b>Connection lost</b> · ${when ? `showing data from ${esc(when)}` : "nothing loaded yet"}. <button class="btn small" data-reconnect>Retry</button>`;
+    return;
+  }
   if (STATIC) {
     b.hidden = false;
     b.innerHTML = `Offline snapshot of <b>${esc(STATIC.title)}</b> from ${esc(new Date(STATIC.exported).toLocaleString())}. Done marks you set here stay in this browser only.`;
@@ -241,7 +250,8 @@ function renderChrome() {
 function tickLive() {
   const el = $("live"), t = $("liveT");
   if (STATIC) { el.className = "live"; t.textContent = "snapshot"; return; }
-  if (hubErr && Date.now() - hubOk > 8000) { el.className = "live err"; t.textContent = "hub unreachable"; return; }
+  if (hubErr && Date.now() - hubOk > 8000) { el.className = "live err"; t.textContent = "hub unreachable"; if ($("banner").hidden) renderBanner(); return; }
+  if (!$("banner").hidden && $("banner").classList.contains("bad")) renderBanner();
   if (route.project && data && data.error) { el.className = "live stale"; t.textContent = "stale"; return; }
   if (route.project && data && data.age != null) {
     const s = Math.round(data.age + (Date.now() - lastFetch) / 1000);
@@ -377,6 +387,8 @@ function renderToolbar() {
   $("edgeBtn").setAttribute("aria-pressed", edgesOf(data.id) === "direct");
   const v = viewOf(data.id);
   document.querySelectorAll("[data-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.view === v));
+  $("zFocus").textContent = sel() ? "Fit related" : "Focus";
+  $("zFocus").title = sel() ? "Fit the selected step and its direct links (w)" : "Focus the work in progress (w)";
   const act = activeSteps();
   $("actNav").hidden = v !== "graph" || act.length < 2;
   $("actPos").textContent = `${Math.min(activeIdx, act.length - 1) + 1} / ${act.length}`;
@@ -530,6 +542,7 @@ function buildGraph(sig) {
   const worldH = lr ? TOP + across * (H + GAPY) + 24 : cursor;
 
   stage.innerHTML = `<div class="dotgrid"></div>`;
+  stage.appendChild(canvasBar());
   const svg = svgEl("svg", { class: "g", role: "application", "aria-label": `${data.title} dependency graph`, style: `--gs:${G}` }, stage);
   const vp = svgEl("g", {}, svg);
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
@@ -630,6 +643,17 @@ function renderLegend() {
     ${critOn ? `<span class="k"><i class="ln" style="border-color:var(--crit)"></i>critical</span>` : ""}`;
 }
 
+// Graph navigation sits in the canvas corner, not in the toolbar.
+let cbar = null;
+function canvasBar() {
+  if (!cbar) {
+    cbar = document.createElement("div");
+    cbar.className = "canvasbar";
+    ["actNav", "zoomCtl", "dirBtn"].forEach(id => cbar.appendChild($(id)));
+  }
+  return cbar;
+}
+
 // camera
 // A small overview map: every step as a dot in its status colour, and the visible area.
 function drawMinimap() {
@@ -691,6 +715,10 @@ function focusWork() {
   const near = new Set();
   act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
   fitNodes([...near], 1, 1);
+}
+function fitRelated(id) {
+  const n = byId[id]; if (!n) return;
+  fitNodes([id, ...n.deps, ...n.users], 0.6, 1);
 }
 let activeIdx = 0;
 function activeSteps() { return data.order.map(id => byId[id]).filter(n => n.status === "progress" || n.status === "blocked"); }
@@ -1166,7 +1194,8 @@ $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "dire
 $("zIn").onclick = () => zoomAt(1.2);
 $("zOut").onclick = () => zoomAt(1 / 1.2);
 $("zFit").onclick = () => fitAll();
-$("zFocus").onclick = () => focusWork();
+$("zFocus").onclick = () => sel() ? fitRelated(sel()) : focusWork();
+$("banner").addEventListener("click", e => { if (e.target.closest("[data-reconnect]")) { pollProjects(); pollProject(); } });
 $("actPrev").onclick = () => stepActive(-1);
 $("actNext").onclick = () => stepActive(1);
 $("moreBtn").onclick = () => { const o = !$("toolbar").classList.contains("open"); $("toolbar").classList.toggle("open", o); $("moreBtn").setAttribute("aria-expanded", o); };
@@ -1256,7 +1285,7 @@ addEventListener("keydown", e => {
   if (e.key === "e") return $("edgeBtn").click();
   if (viewOf(data.id) !== "graph" || !graph) return;
   if (e.key === "f") return fitAll();
-  if (e.key === "w") return focusWork();
+  if (e.key === "w") return $("zFocus").click();
   if (e.key === "d") return $("dirBtn").click();
   if (e.key === "+" || e.key === "=") return zoomAt(1.2);
   if (e.key === "-") return zoomAt(1 / 1.2);
