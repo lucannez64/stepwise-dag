@@ -431,7 +431,7 @@ function visibility() {
     const match = !!q && matches(n, q);
     const related = !f || viewOf(data.id) !== "graph" || n.id === s || f.up.has(n.id) || f.down.has(n.id);
     // Every active filter dims what it excludes, as both original dashboards did.
-    const excluded = off.has(n.area) || (filter && n.status !== filter) || (critOn && !crit.has(n.id)) || (q && !match);
+    const excluded = n.id !== s && (off.has(n.area) || (filter && n.status !== filter) || (critOn && !crit.has(n.id)) || (q && !match));
     out[n.id] = { dim: !related || excluded, excluded, match };
   }
   return { vis: out, f, crit };
@@ -633,8 +633,8 @@ function buildGraph(sig) {
   stage.appendChild(mm);
   bindGraph(svg);
   const cam = cams.get(data.id);
-  if (cam && cam.sig === sig) applyCam();
-  else if (LN.length !== data.nodes.length) fitNodes(LN.map(n => n.id), 0.62, 1);
+  if (cam && cam.sig === sig) { applyCam(); ensureVisible(); }
+  else if (LN.length !== data.nodes.length) fitNodes(LN.map(n => n.id), 1, 1);
   else initialView();
   graph.lastR = stage.getBoundingClientRect();
 }
@@ -940,6 +940,7 @@ function renderTable() {
       <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span style="color:var(--red)">hard</span>' : ""}</td>
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
       <td class="c-title">${esc(n.title)}</td><td class="wrap c-check">${esc(n.check || n.desc)}</td><td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
+      <td class="c-meta">${esc([data.areas[n.area] || n.area, n.size, n.deps.length ? `${n.deps.length} prerequisite${n.deps.length > 1 ? "s" : ""}` : "no prerequisites"].filter(Boolean).join(" · "))}</td>
       ${["order", "id", "title", "status"].includes(tableSort.key) ? "" : `<td class="c-sortval">${esc((COLS.find(c => c[0] === tableSort.key) || COLS[0])[1])}: ${esc(String((COLS.find(c => c[0] === tableSort.key) || COLS[0])[2](n)))}</td>`}
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
   }).join("");
@@ -996,7 +997,7 @@ function overview() {
   const q = query.toLowerCase(), sv = visibility().vis;
   const hits = q ? data.order.map(id => byId[id]).filter(n => !sv[n.id].excluded) : [];
   const scope = filter ? ` in ${LABEL[filter]}` : critOn ? ` on the ${data.critical_computed ? "longest chain" : "critical path"}` : "";
-  const found = q ? `<h3 style="margin-top:2px">Matches${scope} · ${hits.length}</h3>${hits.length ? linkList(hits.slice(0, 20).map(n => n.id)) : `<div class="state-card" style="padding:16px">${emptyHtml()}</div>`}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
+  const found = q ? `<h3 style="margin-top:2px">Matches${scope} · ${hits.length}</h3>${hits.length ? linkList(hits.slice(0, 20).map(n => n.id)) : `<p class="muted small">Nothing matches. The main view offers ways out.</p>`}${hits.length > 20 ? `<p class="muted small">Showing the first 20.</p>` : ""}` : "";
   if (q) return `${problems}${found}`;
   // An active filter lists its steps first, so results stay readable whatever the zoom.
   const { vis: fv } = visibility();
@@ -1382,6 +1383,15 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden && !S
 // keep runtimes and "ago" labels moving
 setInterval(() => { if (route.project && data && data.nodes && data.counts.progress) renderPanel(); if (!route.project) renderHome(); }, 30000);
 addEventListener("resize", () => keepFramed());
+// Keep the selected (or first active) step fully on screen, 24px from the edges.
+function ensureVisible() {
+  if (!graph) return;
+  const id = sel() || (activeSteps()[0] || {}).id, p = id && graph.pos[id];
+  if (!p) return;
+  const r = $("stage").getBoundingClientRect(), c = cams.get(data.id), M = 24;
+  const x = c.tx + p.x * c.k, y = c.ty + p.y * c.k;
+  if (x < M || y < M || x + graph.W * c.k > r.width - M || y + graph.H * c.k > r.height - M) focusNode(id);
+}
 function keepFramed() {
   if (!graph || !data || !cams.has(data.id)) return;
   const r = $("stage").getBoundingClientRect(), o = graph.lastR;
@@ -1391,9 +1401,5 @@ function keepFramed() {
   const c = cams.get(data.id);
   graph.lastR = r;
   setCam(c.k, c.tx + (r.width - o.width) / 2, c.ty + (r.height - o.height) / 2);
-  const id = sel() || (activeSteps()[0] || {}).id, p = id && graph.pos[id];
-  if (p) {
-    const c2 = cams.get(data.id), x = c2.tx + p.x * c2.k, y = c2.ty + p.y * c2.k;
-    if (x < 0 || y < 0 || x + graph.W * c2.k > r.width || y + graph.H * c2.k > r.height) focusNode(id);
-  }
+  ensureVisible();
 }
