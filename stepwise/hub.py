@@ -64,11 +64,32 @@ def now_iso():
     return dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def ssh_cmd(host, remote):
+def ssh_opts():
     SSH_DIR.mkdir(parents=True, exist_ok=True)
-    return ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
-            "-o", "ControlMaster=auto", "-o", f"ControlPath={SSH_DIR}/ssh-%C",
-            "-o", "ControlPersist=600", host, remote]
+    # Keepalives make a shared connection notice a dead network within ~10 s.
+    return ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
+            "-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=2",
+            "-o", "ControlMaster=auto", "-o", f"ControlPath={SSH_DIR}/ssh-%C", "-o", "ControlPersist=600"]
+
+
+def ssh_cmd(host, remote):
+    return ["ssh", *ssh_opts(), host, remote]
+
+
+def drop_connection(host):
+    """Close the shared SSH connection so the next call opens a fresh one."""
+    try:
+        subprocess.run(["ssh", *ssh_opts(), "-O", "exit", host], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    # A frozen connection ignores "exit"; removing its socket makes the next call start fresh.
+    try:
+        out = subprocess.run(["ssh", *ssh_opts(), "-G", host], capture_output=True, text=True, timeout=5).stdout
+        path = next((line.split(None, 1)[1] for line in out.splitlines() if line.startswith("controlpath ")), None)
+        if path and Path(path).parent == SSH_DIR:
+            Path(path).unlink(missing_ok=True)
+    except (OSError, subprocess.SubprocessError, StopIteration):
+        pass
 
 
 def run(host, argv, stdin=None, timeout=20, env=None):
@@ -79,11 +100,17 @@ def run(host, argv, stdin=None, timeout=20, env=None):
     try:
         p = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout,
                            env=dict(os.environ, **env) if env else None)
-        return p.returncode, p.stdout, p.stderr
+        code, out, err = p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
-        return 124, "", "timed out"
+        code, out, err = 124, "", f"no answer after {timeout}s"
     except OSError as exc:
-        return 127, "", str(exc)
+        code, out, err = 127, "", str(exc)
+    if host and code in (124, 255):
+        # 255 is ssh's own failure; a timeout may mean a dead shared connection.
+        drop_connection(host)
+        reason = (err.strip().splitlines() or ["connection failed"])[-1]
+        err = f"cannot reach {host}: {reason}"
+    return code, out, err
 
 
 # ------------------------------------------------------------ normalizing ----
@@ -272,7 +299,7 @@ class Project:
 
     def probe(self):
         req = json.dumps({"plan": self.path("plan"), "state": self.path("state"), "repo": self.path("repo")})
-        code, out, err = run(self.host, ["python3", "-I", "-", req], stdin=PROBE, timeout=25)
+        code, out, err = run(self.host, ["python3", "-I", "-", req], stdin=PROBE, timeout=15)
         if code != 0:
             raise RuntimeError((err or out or f"exit {code}").strip().splitlines()[-1][:300])
         raw = json.loads(out)
