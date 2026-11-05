@@ -417,8 +417,21 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .node.progress .pulse { animation: none; opacity: 0; }
   .logrow.fresh, .toast { animation: none; }
 }
-/* laptops keep the key as swatches; names are in tooltips */
-@media (max-width: 1440px) { .statusbar .legend .k { font-size: 0; gap: 0; } .statusbar .legend { gap: 6px; } }
+/* laptops: the key folds into a button and opens as a labelled list */
+.legend .keys { display: contents; }
+.legend .keybtn { display: none; }
+@media (max-width: 1440px) {
+  .statusbar .legend { position: relative; }
+  .legend .keybtn { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border: 1px solid var(--s1); border-radius: 6px;
+    background: var(--card); color: var(--sub1); font: 500 11.5px var(--sans, inherit); cursor: pointer; }
+  .legend .keybtn:hover, .legend.open .keybtn { color: var(--text); border-color: var(--o0); }
+  .legend .keybtn:focus-visible { outline: 2px solid var(--lavender); outline-offset: 1px; }
+  .legend .keys { display: none; position: fixed; left: var(--keyx, 12px); bottom: 38px; z-index: 30; min-width: 170px;
+    flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 14px; font-size: 12px; color: var(--sub1);
+    background: var(--card); border: 1px solid var(--s1); border-radius: 10px; box-shadow: var(--shadow); }
+  .legend.open .keys { display: flex; }
+  .legend .keys .k { gap: 8px; }
+}
 @media (max-width: 1100px) { .search input { width: 170px; } }
 @media (max-width: 900px) {
   .brand span { display: none; }
@@ -439,7 +452,7 @@ dialog .btns { justify-content: flex-end; margin-top: 16px; }
   .side { grid-template-rows: auto auto; }
   .side > section { overflow: visible; }
   .homegrid { grid-template-columns: 1fr; }
-  .cards { grid-template-columns: 1fr; padding: 12px; }
+  .cards { grid-template-columns: minmax(0, 1fr); padding: 12px; }
   .feed { border-left: 0; border-top: 1px solid var(--s0); }
   .legend { display: none; }
   .hint { display: none; }
@@ -841,3 +854,18 @@ table.t td.c-check { min-width: 320px; } table.t td.c-deps { max-width: 120px; o
 .canvasbar .edgekey { position: static; box-shadow: var(--shadow); }
 .epill { background: var(--card); }
 @media (max-width: 900px) { .canvasbar .edgekey { display: none; } }
+
+/* cards never grow wider than their column */
+.card, .card > * { min-width: 0; }
+/* long table text stays two lines; the full text is in the step details */
+table.t td.c-check { min-width: 240px; max-width: 340px; }
+table.t .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* activity rail: two lines per entry, click to read the rest */
+.feed .logrow .m { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.feed .logrow.open .m { display: block; }
+/* with the details panel open, the table keeps the columns you scan by */
+@media (min-width: 901px) {
+  .work:not(.wide) table.t .c-check, .work:not(.wide) table.t .c-level, .work:not(.wide) table.t .c-size, .work:not(.wide) table.t .c-who { display: none; }
+}
+table.t td.c-deps { white-space: nowrap; overflow-wrap: normal; max-width: none; }
+table.t td.c-updated { white-space: nowrap; }

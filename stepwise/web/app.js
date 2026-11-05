@@ -298,6 +298,14 @@ document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, 
 // ------------------------------------------------------------------ home ----
 // Every home card has the same ten rows, so sections line up across a row of cards.
 const SLOT = '<div class="slot"></div>';
+// Activity entries the reader expanded stay expanded across refreshes.
+const feedOpen = new Set();
+$("main").addEventListener("click", e => {
+  const m = e.target.closest(".feed .logrow .m"); if (!m) return;
+  const row = m.parentNode, k = row.dataset.k;
+  feedOpen.has(k) ? feedOpen.delete(k) : feedOpen.add(k);
+  row.classList.toggle("open", feedOpen.has(k));
+});
 function renderHome() {
   parkBar();
   renderChrome();
@@ -332,7 +340,8 @@ function renderHome() {
   $("feed").innerHTML = `<div class="sechead"><h3>Recent activity</h3></div>` + (feed.map(e => {
     const d = new Date(ts(e.t)), label = isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? "Today" : d.toLocaleDateString("en-GB", { weekday: "long", month: "short", day: "numeric" });
     const head = label !== day ? `<div class="dayhead">${esc(day = label)}</div>` : "";
-    return head + `<div class="logrow"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
+    const k = e.p.id + "|" + e.t + "|" + e.step;
+    return head + `<div class="logrow${feedOpen.has(k) ? " open" : ""}" data-k="${esc(k)}"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
   }).join("") || '<div class="empty">No activity yet.</div>');
 }
 $("main").addEventListener("click", e => {
@@ -696,12 +705,20 @@ function renderLegend() {
   lg.hidden = !prefs.legend || !route.project || viewOf(route.project) !== "graph";
   if (lg.hidden) return;
   const sw = (fill, stroke, dash) => `<i class="sw" style="background:color-mix(in srgb, var(--${fill}) 22%, var(--base));border-color:var(--${stroke});${dash ? "border-style:dashed" : ""}"></i>`;
-  lg.innerHTML = `<span class="k">${sw("done", "done")}done</span><span class="k">${sw("done", "peach", 1)}not pushed</span>
+  lg.classList.toggle("open", keyOpen);
+  lg.innerHTML = `<button class="keybtn" aria-expanded="${keyOpen}" aria-controls="legendKeys">Status key</button><span class="keys" id="legendKeys"><span class="k">${sw("done", "done")}done</span><span class="k">${sw("done", "peach", 1)}not pushed</span>
     <span class="k">${sw("progress", "progress")}in progress</span><span class="k">${sw("blocked", "blocked")}blocked</span>
     <span class="k">${sw("ready", "ready")}ready</span><span class="k">${sw("s0", "s1")}waiting</span>
     <span class="k"><i class="ln" style="border-color:var(--needs)"></i>needs</span><span class="k"><i class="ln" style="border-color:var(--unblocks)"></i>unblocks</span>
-    ${critOn ? `<span class="k"><i class="ln" style="border-color:var(--crit)"></i>critical</span>` : ""}`;
+    ${critOn ? `<span class="k"><i class="ln" style="border-color:var(--crit)"></i>${data.critical_computed ? "longest chain" : "critical path"}</span>` : ""}</span>`;
+  if (keyOpen) lg.style.setProperty("--keyx", lg.querySelector(".keybtn").getBoundingClientRect().left + "px");
 }
+// On laptops the key folds into a button; it opens above the status bar.
+let keyOpen = false;
+function setKey(open) { keyOpen = open; renderLegend(); }
+$("legend").addEventListener("click", e => { if (e.target.closest(".keybtn")) setKey(!keyOpen); });
+document.addEventListener("pointerdown", e => { if (keyOpen && !e.target.closest("#legend")) setKey(false); });
+document.addEventListener("keydown", e => { if (keyOpen && e.key === "Escape") { setKey(false); $("legend").querySelector(".keybtn").focus(); } });
 
 // Graph navigation sits in the canvas corner, not in the toolbar.
 let cbar = null;
@@ -830,8 +847,23 @@ function focusWork() {
   if (!act.length) return fitAll();
   const near = new Set();
   act.forEach(n => { near.add(n.id); [...n.deps, ...n.users].forEach(x => { if (Math.abs(byId[x].level - n.level) <= 1) near.add(x); }); });
-  if (phone()) return focusNode(act.sort((a, b) => a.order - b.order)[0].id);
-  fitNodes([...near], 1, 1);
+  const first = act.sort((a, b) => a.order - b.order)[0];
+  if (phone()) return focusNode(first.id);
+  // Prefer every active step with its neighbours, then the first one with its direct links,
+  // at full size or slightly smaller (85% still reads well).
+  const own = [first.id, ...first.deps, ...first.users];
+  for (const ids of [[...near], own]) for (const k of [1, 0.85]) if (fitsAt(ids, k)) return fitNodes(ids, k, 1);
+  fitNodes(own, 1, 1);
+}
+function bounds(ids) {
+  const ps = ids.map(id => graph.pos[id]).filter(Boolean);
+  if (!ps.length) return null;
+  return { x0: Math.min(...ps.map(p => p.x)) - 30, y0: Math.min(...ps.map(p => p.y)) - 30,
+    x1: Math.max(...ps.map(p => p.x)) + graph.W + 30, y1: Math.max(...ps.map(p => p.y)) + graph.H + 30 };
+}
+function fitsAt(ids, k) {
+  const b = bounds(ids), r = $("stage").getBoundingClientRect();
+  return !!b && (b.x1 - b.x0) * k <= r.width && (b.y1 - b.y0) * k <= r.height;
 }
 // Show the step with its direct links when that stays readable (60% or more); otherwise centre it.
 function frameStep(id) {
@@ -865,8 +897,14 @@ function fitNodes(ids, floor = 0.45, ceil = 1.1) {
   // Too big to fit at a readable size: start at the first step instead of centring.
   const fits = (x1 - x0) * k <= r.width && (y1 - y0) * k <= r.height;
   const p0 = graph.pos[ids[0]];
-  if (fits) setCam(k, (r.width - (x1 - x0) * k) / 2 - x0 * k, (r.height - (y1 - y0) * k) / 2 - y0 * k);
-  else setCam(k, graph.lr ? 20 - (p0.x - 30) * k : r.width / 2 - (p0.x + graph.W / 2) * k, graph.lr ? r.height / 2 - (p0.y + graph.H / 2) * k : 20 - (p0.y - 30) * k);
+  if (fits) return setCam(k, (r.width - (x1 - x0) * k) / 2 - x0 * k, (r.height - (y1 - y0) * k) / 2 - y0 * k);
+  // Show as much of the group as fits, starting from its top-left corner, and keep the first step on screen.
+  const start = (size, a, b) => (b - a) * k > size ? 16 - a * k : (size - (b - a) * k) / 2 - a * k;
+  let tx = start(r.width, x0, x1), ty = start(r.height, y0, y1);
+  const px0 = (p0.x - 24) * k, px1 = (p0.x + graph.W + 24) * k, py0 = (p0.y - 24) * k, py1 = (p0.y + graph.H + 24) * k;
+  if (px1 + tx > r.width) tx = r.width - px1; if (px0 + tx < 0) tx = -px0;
+  if (py1 + ty > r.height) ty = r.height - py1; if (py0 + ty < 0) ty = -py0;
+  setCam(k, tx, ty);
 }
 function zoomAt(f, mx, my) {
   const c = cams.get(data.id), r = $("stage").getBoundingClientRect();
@@ -1027,10 +1065,10 @@ function renderTable() {
     return `<tr data-id="${esc(n.id)}" class="${n.id === s ? "sel" : ""}" tabindex="0">
       <td class="muted c-order">${n.order}</td><td class="id c-id">${esc(n.id)}</td><td class="c-title">${esc(n.title)}</td>
       <td class="c-status"><span class="pill ${n.status}" style="height:20px">${LABEL[n.status]}</span>${n.unpushed ? ' <span class="pill unpushed" style="height:20px">not pushed</span>' : ""}</td>
-      <td class="wrap c-check">${esc(n.check || n.desc)}</td>
+      <td class="wrap c-check"><div class="clamp" title="${esc(n.check || n.desc)}">${esc(n.check || n.desc)}</div></td>
       <td class="c-area"><i class="dot" style="display:inline-block;vertical-align:-1px;margin-right:5px;background:${areaColor(n.area)};border-color:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area)}</td>
       <td class="c-level">${n.level}</td><td class="c-size">${esc(n.size)}${n.hard ? ' <span class="hardtag">hard</span>' : ""}</td>
-      <td class="mono small c-deps">${esc(n.deps.join(", ") || "–")}</td>
+      <td class="mono small c-deps">${n.deps.map(esc).join("<br>") || "–"}</td>
       <td class="c-meta">${esc([data.areas[n.area] || n.area, n.size, n.deps.length ? `${n.deps.length} prerequisite${n.deps.length > 1 ? "s" : ""}` : "no prerequisites"].filter(Boolean).join(" · "))}</td>
       ${["order", "id", "title", "status"].includes(tableSort.key) ? "" : `<td class="c-sortval">${esc((COLS.find(c => c[0] === tableSort.key) || COLS[0])[1])}: ${esc(String((COLS.find(c => c[0] === tableSort.key) || COLS[0])[2](n)))}</td>`}
       <td class="muted small c-updated" title="${esc(e.updated || "")}">${e.updated ? ago(e.updated) : ""}</td><td class="small c-who">${esc(e.who || "")}</td></tr>`;
@@ -1138,18 +1176,21 @@ function detail(n) {
   const check = n.check ? `<h3>Done when</h3><div class="check">${esc(n.check)}</div>` : "";
   const desc = n.desc ? `<h3>${n.check ? "Notes" : "Description"}</h3><div class="check">${esc(n.desc)}</div>` : "";
   const noCheck = !n.check && !n.desc ? `<h3>Done when</h3><div class="check empty">No completion check written for this step.</div>` : "";
+  // Open steps lead with what you can do; finished steps lead with what they are, and the note box moves down.
+  const acts = actions(n, e), late = s === "done";
   return `<button class="grab" data-grow aria-label="Make the details taller or shorter"></button><div class="dhead"><span class="idl">${esc(n.id)}</span><button class="iconbtn x" data-close aria-label="Close details" title="Close (Esc)">✕</button></div>
     <div class="dtitle">${esc(n.title)}</div>
     <div class="darea"><i class="sw" style="background:${areaColor(n.area)}"></i>${esc(data.areas[n.area] || n.area || "no area")}</div>
     <div class="pills">${pills}</div>
     ${check}
-    ${actions(n, e)}
-    ${e.note && e.note !== n.check ? `<h3>Latest note</h3><div class="note">${esc(e.note)}</div>` : ""}
+    ${late ? "" : acts}
     ${n.hard ? `<p class="small" style="color:var(--red);margin:0 0 8px">Hard: this step may need a redesign.</p>` : ""}
     ${conflict}${unmet}${desc}${noCheck}
+    ${e.note && e.note !== n.check ? `<h3>Latest note</h3><div class="note">${esc(e.note)}</div>` : ""}
     <h3>Needs first · ${n.deps.length}</h3>${linkList(n.deps, "Nothing: it can start any time.")}
     <h3>Unblocks · ${n.users.length}</h3>${linkList(n.users, "Nothing depends on it.")}
     ${f.down.size ? `<p class="muted small">${f.down.size} step${f.down.size === 1 ? "" : "s"} depend on this one, directly or not.</p>` : ""}
+    ${late && acts ? `<h3>Add a note</h3>${acts}` : ""}
     <details class="more"${detailsOpen ? " open" : ""}><summary>Details</summary>${meta}${commit}</details>
     ${stepLog(n.id)}`;
 }
