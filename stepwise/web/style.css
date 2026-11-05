@@ -918,3 +918,11 @@ table.t td.c-area { min-width: 0; max-width: 140px; }
 table.t .c-check .clamp { -webkit-line-clamp: 3; }
 /* phone: the sheet lists the links, so the canvas labels stay out of the way */
 @media (max-width: 900px) { .app.sheet .epill, .app.sheet .epill-dock { display: none; } }
+/* activity: a real button expands long entries */
+.feed .mtog { grid-column: 2; justify-self: start; margin-top: 2px; padding: 2px 0; border: 0; background: none; color: var(--blue); font: 500 12px var(--sans); cursor: pointer; }
+.feed .mtog:hover { text-decoration: underline; }
+.feed .mtog:focus-visible { outline: 2px solid var(--lavender); outline-offset: 2px; border-radius: 3px; }
+.feed .logrow .m { cursor: auto; }
+/* dimmed steps keep readable titles; the fading is carried by borders and links */
+:root[data-theme="macchiato"] .node.dim .tt { fill: var(--sub0); }
+:root[data-theme="macchiato"] .node.dim .id { fill: var(--sub1); }

@@ -303,10 +303,13 @@ const SLOT = '<div class="slot"></div>';
 // Activity entries the reader expanded stay expanded across refreshes.
 const feedOpen = new Set();
 $("main").addEventListener("click", e => {
-  const m = e.target.closest(".feed .logrow .m"); if (!m) return;
-  const row = m.parentNode, k = row.dataset.k;
+  const m = e.target.closest(".feed .logrow .mtog, .feed .logrow .m"); if (!m) return;
+  const row = m.closest(".logrow"), k = row.dataset.k, b = row.querySelector(".mtog");
+  if (!b) return;
   feedOpen.has(k) ? feedOpen.delete(k) : feedOpen.add(k);
-  row.classList.toggle("open", feedOpen.has(k));
+  const open = feedOpen.has(k);
+  row.classList.toggle("open", open);
+  b.setAttribute("aria-expanded", open); b.textContent = open ? "Show less" : "Show more";
 });
 function renderHome() {
   parkBar();
@@ -343,7 +346,7 @@ function renderHome() {
     const d = new Date(ts(e.t)), label = isNaN(d) ? "" : d.toDateString() === new Date().toDateString() ? "Today" : d.toLocaleDateString("en-GB", { weekday: "long", month: "short", day: "numeric" });
     const head = label !== day ? `<div class="dayhead">${esc(day = label)}</div>` : "";
     const k = e.p.id + "|" + e.t + "|" + e.step;
-    return head + `<div class="logrow${feedOpen.has(k) ? " open" : ""}" data-k="${esc(k)}"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div></div>`;
+    return head + `<div class="logrow${feedOpen.has(k) ? " open" : ""}" data-k="${esc(k)}"><span class="tm">${esc(isNaN(d) ? "" : d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</span><div class="hd"><span class="proj">${esc(e.p.title)}</span><a data-go="${esc(e.p.id)}" data-step="${esc(e.step)}">${esc(e.step)}</a>${kindBadge(e.kind)}${e.who && e.who !== "dashboard" ? `<span class="k">${esc(e.who)}</span>` : ""}</div><div class="m">${esc(e.msg)}</div>${e.msg.length > 120 ? `<button class="mtog" aria-expanded="${feedOpen.has(k)}">${feedOpen.has(k) ? "Show less" : "Show more"}</button>` : ""}</div>`;
   }).join("") || '<div class="empty">No activity yet.</div>');
 }
 $("main").addEventListener("click", e => {
@@ -853,6 +856,7 @@ function setCam(k, tx, ty) {
 function viewRect() {
   const r = $("stage").getBoundingClientRect();
   if (!phone()) return { width: r.width, height: Math.max(200, r.height - 56) };
+  if (!sel()) return { width: r.width, height: Math.max(200, r.height - 60) };
   // On a phone the details sheet covers the lower part of the canvas once a step is selected.
   const sheetTop = sel() ? innerHeight * (1 - 0.62) : innerHeight;
   return { width: r.width, height: Math.max(graph ? graph.H + 16 : 100, Math.min(r.height, sheetTop - Math.max(0, r.top))) };
@@ -1174,10 +1178,11 @@ function overview() {
     <button class="btn ghost small" data-reset-filters style="margin-top:6px">Reset filters</button>` : "";
   const help = viewOf(data.id) === "graph" ? "Click a step to see its details. Overview shows the whole graph." : "Click a step to see its details.";
   if (flist && !q) return `${problems}${flist}<p class="muted small">${help}</p>`;
+  const pinned = viewOf(data.id) === "order" && !phone();
   return `${problems}${found}
-    ${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
-    ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}
-    <h3 ${prog.length || blocked.length ? "" : 'style="margin-top:2px"'}>Ready to start · ${ready.length}</h3>
+    ${pinned ? "" : `${prog.length ? `<h3 style="margin-top:2px">In progress · ${prog.length}</h3>${linkList(prog.map(n => n.id))}` : ""}
+    ${blocked.length ? `<h3>Blocked · ${blocked.length}</h3>${linkList(blocked.map(n => n.id))}` : ""}`}
+    <h3 ${!pinned && (prog.length || blocked.length) ? "" : 'style="margin-top:2px"'}>Ready to start · ${ready.length}</h3>
     ${linkList(ready.slice(0, 6).map(n => n.id), "Nothing is ready: every open step waits on a prerequisite.", true)}
     ${ready.length > 6 ? `<button class="btn ghost small" data-filter-ready style="margin-top:4px">Show all ${ready.length} ready steps</button>` : ""}
     <p class="muted small">Ready means every prerequisite is recorded as done. It is not a priority order.</p>
@@ -1397,6 +1402,7 @@ $("toolbar").addEventListener("click", e => {
   const f = e.target.closest("[data-filter]");
   if (f) {
     filter = f.dataset.filter || null;
+    foldFilters();
     renderProject();
 
     return;
@@ -1423,7 +1429,9 @@ $("areaMenu").addEventListener("change", e => {
   box.checked ? off.delete(box.dataset.area) : off.add(box.dataset.area);
   renderProject();
 });
-$("critBtn").onclick = () => { critOn = !critOn; renderProject(); };
+$("critBtn").onclick = () => { critOn = !critOn; foldFilters(); renderProject(); };
+// On a phone the filter row folds away after a choice; the Filters button shows how many are on.
+function foldFilters() { if (phone()) { $("toolbar").classList.remove("open"); $("moreBtn").setAttribute("aria-expanded", "false"); } }
 $("ctxBtn").onclick = () => { showContext = !showContext; renderStage(); };
 $("edgeBtn").onclick = () => { prefs.edges[data.id] = edgesOf(data.id) === "direct" ? "all" : "direct"; savePrefs(); renderProject(); };
 $("zIn").onclick = () => zoomAt(1.2);
