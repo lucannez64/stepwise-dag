@@ -890,6 +890,14 @@ table.t td.c-updated { white-space: nowrap; }
   .grab { width: 64px; height: 44px; margin: -14px auto -6px; background: none; position: relative; }
   .grab::before { content: ""; position: absolute; left: 10px; right: 10px; top: 19px; height: 5px; border-radius: 3px; background: var(--s2); }
 }
-/* home: cards take their own height; activity gets more room */
-.homegrid { grid-template-columns: minmax(0, 1fr) 390px; }
+/* home: cards take their own height; activity gets more room (desktop only) */
+@media (min-width: 901px) { .homegrid { grid-template-columns: minmax(0, 1fr) 390px; } }
 .cards { align-items: start; }
+/* edge labels with no free gap sit together in the top-right corner */
+.epill-dock { position: absolute; top: 8px; right: 8px; z-index: 5; display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  max-height: calc(100% - 80px); overflow: auto; padding: 8px; border-radius: 10px; background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--s1); box-shadow: var(--shadow); }
+.epill-dock .epill { position: static; }
+/* card counts: two even columns, so every card lines up */
+.card .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
+.more-act { font-size: 12.5px; min-width: 0; }

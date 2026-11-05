@@ -252,6 +252,7 @@ function tickLive() {
   const el = $("live"), t = $("liveT");
   if (STATIC) { el.className = "live"; t.textContent = "snapshot"; return; }
   if (hubErr && Date.now() - hubOk > 8000) { el.className = "live err"; t.textContent = "hub unreachable"; if ($("banner").hidden) renderBanner(); return; }
+  if (hubErr && route.project && (!data || data.id !== route.project)) { el.className = "live err"; t.textContent = "project unavailable"; return; }
   if (!$("banner").hidden && $("banner").classList.contains("bad")) renderBanner();
   if (route.project && data && data.error) { el.className = "live stale"; t.textContent = "stale"; return; }
   if (route.project && data && data.age != null) {
@@ -747,10 +748,16 @@ function edgePills() {
     if (x >= 0 && y >= 0 && x <= r.width && y <= r.height) continue;
     pills.push({ id, kind, x, y });
   }
-  // the canvas controls and the minimap count as taken space
-  const placed = [...st.querySelectorAll(".canvasbar, .minimap:not([hidden])")].map(el => {
+  // the canvas controls, the minimap, the key and every visible step count as taken space
+  const placed = [...st.querySelectorAll(".canvasbar, .minimap:not([hidden]), .edgekey")].map(el => {
     const b = el.getBoundingClientRect(); return { L: b.left - r.left, T: b.top - r.top, w: b.width, h: b.height };
   });
+  for (const id in graph.pos) {
+    const p = graph.pos[id], L = c.tx + p.x * c.k, T = c.ty + p.y * c.k, w = graph.W * c.k, h = graph.H * c.k;
+    if (L < r.width && T < r.height && L + w > 0 && T + h > 0) placed.push({ L, T, w, h });
+  }
+  const hits = (L, T, w, h) => placed.some(o => L < o.L + o.w + 6 && o.L < L + w + 6 && T < o.T + o.h + 6 && o.T < T + h + 6);
+  const dock = [];
   for (const q of pills.slice(0, 12)) {
     const b = document.createElement("button");
     b.className = "epill " + q.kind; b.textContent = (q.kind === "up" ? "← " : "→ ") + q.id;
@@ -759,10 +766,25 @@ function edgePills() {
     st.appendChild(b);
     // keep the whole label inside the canvas, and never on top of another label
     const w = b.offsetWidth, h = b.offsetHeight;
-    let L = Math.min(r.width - w - 8, Math.max(8, q.x - w / 2)), T = Math.min(r.height - h - 64, Math.max(8, q.y - h / 2));
-    for (let i = 0; i < 40 && placed.some(o => L < o.L + o.w + 4 && o.L < L + w + 4 && T < o.T + o.h + 4 && o.T < T + h + 4); i++) T = T - h - 6 < 8 ? T + h + 6 : T - h - 6;
-    placed.push({ L, T, w, h });
-    b.style.left = L + "px"; b.style.top = T + "px";
+    const L0 = Math.min(r.width - w - 8, Math.max(8, q.x - w / 2)), T0 = Math.min(r.height - h - 64, Math.max(8, q.y - h / 2));
+    // Slide along the edge the step lies past, to the nearest free gap.
+    const side = q.x < 0 || q.x > r.width, step = side ? h + 6 : w + 6;
+    let spot = null;
+    for (let i = 0; i < 60 && !spot; i++) {
+      const d = (i % 2 ? -1 : 1) * Math.ceil(i / 2) * step;
+      const L = side ? L0 : L0 + d, T = side ? T0 + d : T0;
+      if (L < 8 || T < 8 || L + w > r.width - 8 || T + h > r.height - 64) continue;
+      if (!hits(L, T, w, h)) spot = { L, T };
+    }
+    if (!spot) { dock.push(b); continue; }
+    placed.push({ ...spot, w, h });
+    b.style.left = spot.L + "px"; b.style.top = spot.T + "px";
+  }
+  // No free gap: list the rest together in the top corner.
+  if (dock.length) {
+    const box = document.createElement("div"); box.className = "epill-dock";
+    dock.forEach(b => box.appendChild(b));
+    st.appendChild(box);
   }
 }
 // Far out, every id is drawn at a fixed 11px on screen, shortened to fit its card.
@@ -1220,7 +1242,7 @@ function actions(n, e) {
   // VELA's CLI starts a step when you log on it, so only offer notes once it has a record.
   if (can("log") && !(data.log_starts && !data.progress[n.id])) b.push(`<button class="btn" data-act="log">Add note</button>`);
   const rec = data.progress[n.id];
-  if (can("reset") && rec && rec.state && rec.state !== "todo") b.push(`<button class="btn ghost more-act" data-act="reset" aria-label="Reset this step…" title="Reset this step…">⋯</button>`);
+  if (can("reset") && rec && rec.state && rec.state !== "todo") b.push(`<button class="btn ghost more-act" data-act="reset" title="Clear this step's progress">Reset…</button>`);
   if (!b.length) return "";
   const noteOnly = b.some(x => x.includes('data-act="log"'));
   return `<div class="actions"><input id="noteIn" maxlength="2000" placeholder="${noteOnly ? "Note for the log (optional, Enter adds it)" : "Note for the log (optional)"}" aria-label="Note">
