@@ -869,3 +869,27 @@ table.t .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient
 }
 table.t td.c-deps { white-space: nowrap; overflow-wrap: normal; max-width: none; }
 table.t td.c-updated { white-space: nowrap; }
+/* Latte: orange text uses a darker ink (about 5:1); borders keep the brighter orange */
+.peach-ink { color: var(--peach); }
+:root[data-theme="latte"] .pill.unpushed, :root[data-theme="latte"] .stat.unpushed b, :root[data-theme="latte"] .fact.warn b,
+:root[data-theme="latte"] .statusbar .fact.warn b, :root[data-theme="latte"] .peach-ink { color: #b3420a; }
+:root[data-theme="latte"] .node.unpushed .st { fill: #b3420a; }
+/* graph type: 14px titles, 12px labels at full size */
+.node .tt { font-size: calc(14px * var(--gs, 1)); fill: var(--text); }
+.node .id { font-size: calc(13.5px * var(--gs, 1)); }
+.node .tag, .node .hard, .node .st { font-size: calc(12px * var(--gs, 1)); }
+.node.dim .tt { fill: var(--o1); }
+:root[data-theme="latte"] .node.dim .tt { fill: var(--sub0); }
+/* phone: the project name gets the whole first row; counts sit on a short second row */
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; row-gap: 2px; }
+  .switcher { flex: 1 1 0; }
+  .switch-btn .name { max-width: none; }
+  .stats { order: 5; flex: 1 0 100%; justify-content: flex-start; margin-left: 0; padding: 0 2px 2px; }
+  /* the sheet handle is a full-size button with a small bar inside */
+  .grab { width: 64px; height: 44px; margin: -14px auto -6px; background: none; position: relative; }
+  .grab::before { content: ""; position: absolute; left: 10px; right: 10px; top: 19px; height: 5px; border-radius: 3px; background: var(--s2); }
+}
+/* home: cards take their own height; activity gets more room */
+.homegrid { grid-template-columns: minmax(0, 1fr) 390px; }
+.cards { align-items: start; }

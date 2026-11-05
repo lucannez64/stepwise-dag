@@ -522,7 +522,7 @@ function buildGraph(sig) {
   const stage = $("stage");
   const comfy = prefs.density === "comfortable";
   const G = prefs.text / 100;  // text size scales the cards too
-  const W = Math.round((comfy ? 272 : 256) * G), H = Math.round((comfy ? 88 : 82) * G);
+  const W = Math.round((comfy ? 296 : 280) * G), H = Math.round((comfy ? 98 : 92) * G);
   const lr = dirOf(data.id) === "LR";
   const GAPX = lr ? 84 : 22, GAPY = lr ? 12 : 58;
   // layers by level, ordered by area then dependency order, then barycenter sweeps
@@ -619,18 +619,18 @@ function buildGraph(sig) {
     svgEl("rect", { x: 4, y: 6, width: 3, height: H - 12, rx: 1.5, fill: areaColor(n.area) }, g);
     // Row 1: order and the full id. Rows 2-3: title. Bottom row: size, hard, status.
     let cx = 14;
-    const ord = svgEl("text", { class: "ord", x: cx, y: 19 * G }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 10.5 * G) + 6;
-    const idt = svgEl("text", { class: "id", x: cx, y: 19 * G }, g);
+    const ord = svgEl("text", { class: "ord", x: cx, y: 20 * G }, g); ord.textContent = "#" + n.order; cx += monoW(ord.textContent, 11 * G) + 6;
+    const idt = svgEl("text", { class: "id", x: cx, y: 20 * G }, g);
     const room = W - 10 - cx;
     let id = n.id;
-    if (monoW(id, 13 * G) > room) { while (id.length > 3 && monoW(id + "…", 13 * G) > room) id = id.slice(0, -1); id += "…"; }
+    if (monoW(id, 13.5 * G) > room) { while (id.length > 3 && monoW(id + "…", 13.5 * G) > room) id = id.slice(0, -1); id += "…"; }
     idt.textContent = id;
-    const [l1, l2] = wrap2(n.title, W - 24, 12 * G);
-    svgEl("text", { class: "tt", x: 14, y: 37 * G }, g).textContent = l1;
-    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: 51 * G }, g).textContent = l2;
+    const [l1, l2] = wrap2(n.title, W - 24, 14 * G);
+    svgEl("text", { class: "tt", x: 14, y: 41 * G }, g).textContent = l1;
+    if (l2) svgEl("text", { class: "tt tt2", x: 14, y: 58 * G }, g).textContent = l2;
     const by = H - 10 * G;
     let bx = 14;
-    if (prefs.sizes && n.size) { svgEl("text", { class: "tag", x: bx, y: by }, g).textContent = n.size; bx += monoW(n.size, 10 * G) + 8; }
+    if (prefs.sizes && n.size) { svgEl("text", { class: "tag", x: bx, y: by }, g).textContent = n.size; bx += monoW(n.size, 12 * G) + 8; }
     if (n.hard) svgEl("text", { class: "hard", x: bx, y: by }, g).textContent = "hard";
     const st = svgEl("text", { class: "st", x: W - 9, y: by, "text-anchor": "end" }, g);
     // Far zoom shows only a large id, centred.
@@ -644,10 +644,10 @@ function buildGraph(sig) {
   mm.hidden = !LN.length;
   mm.className = "minimap"; mm.title = "Overview: click to move there";
   mm.innerHTML = `<button class="mmtog" aria-label="Show or hide the overview map" title="Show or hide the map">▾</button><canvas></canvas>`;
-  mm.querySelector(".mmtog").addEventListener("pointerdown", e => { e.stopPropagation(); prefs.miniOff = !prefs.miniOff; savePrefs(); drawMinimap(); });
+  mm.querySelector(".mmtog").addEventListener("pointerdown", e => { e.stopPropagation(); prefs.miniOff = !miniOff(); savePrefs(); drawMinimap(); });
   mm.addEventListener("pointerdown", e => {
     e.stopPropagation();
-    if (prefs.miniOff) return;
+    if (miniOff()) return;
     const b = mm.querySelector("canvas").getBoundingClientRect(), r = stage.getBoundingClientRect(), c = cams.get(data.id);
     const wx = (e.clientX - b.left) / graph.mini.sc, wy = (e.clientY - b.top) / graph.mini.sc;
     setCam(c.k, r.width / 2 - wx * c.k, r.height / 2 - wy * c.k);
@@ -778,14 +778,16 @@ function farIds(k) {
     t.style.fontSize = (11 / k).toFixed(1) + "px";
   }
 }
+// The overview map starts folded on laptops, where it would cover steps; the choice is remembered.
+const miniOff = () => prefs.miniOff ?? innerWidth <= 1440;
 function drawMinimap() {
   const cv = $("stage").querySelector(".minimap canvas");
   if (!cv || !graph) return;
   const c = cams.get(data.id), r = $("stage").getBoundingClientRect();
   const ar = graph.worldW / graph.worldH;
-  const MW = ar > 1 ? 240 : Math.max(90, Math.round(160 * ar)), MH = ar > 1 ? Math.max(48, Math.round(240 / ar)) : 160;
+  const MW = ar > 1.8 ? 180 : Math.max(60, Math.round(100 * ar)), MH = ar > 1.8 ? Math.max(40, Math.round(180 / ar)) : 100;
   const mm = $("stage").querySelector(".minimap");
-  mm.classList.toggle("collapsed", !!prefs.miniOff);
+  mm.classList.toggle("collapsed", miniOff());
   mm.hidden = graph.worldW * c.k <= r.width && graph.worldH * c.k <= r.height;
   const dpr = devicePixelRatio || 1;
   cv.width = MW * dpr; cv.height = MH * dpr; cv.style.width = MW + "px"; cv.style.height = MH + "px";
@@ -824,15 +826,20 @@ function setCam(k, tx, ty) {
     if (h > r.height) ty = Math.min(8, Math.max(r.height - h - 8, ty)); else ty = Math.max(8, Math.min(ty, r.height - h - 8));
     if (w > r.width) tx = Math.min(8, Math.max(r.width - w - 8, tx));
   } cams.set(data.id, { k: Math.min(3, Math.max(0.08, k)), tx, ty, sig: graph.sig }); applyCam(); }
-function fitAll() {
+// The canvas area steps are framed in: the bottom strip holds the graph controls.
+function viewRect() {
   const r = $("stage").getBoundingClientRect();
+  return { width: r.width, height: phone() ? r.height : Math.max(200, r.height - 56) };
+}
+function fitAll() {
+  const r = viewRect();
   // Top-to-bottom plans keep a screen-sized gutter on the left for level summaries.
   const GUT = graph.lr ? 0 : 110;
   const k = Math.min(1.2, (r.width - 24 - GUT) / graph.worldW, (r.height - 24) / graph.worldH);
   setCam(k, GUT + (r.width - GUT - graph.worldW * k) / 2, (r.height - graph.worldH * k) / 2);
 }
 function initialView() {
-  const r = $("stage").getBoundingClientRect();
+  const r = viewRect();
   // Open at full size: readable first, overview on demand (Fit).
   if (graph.lr) setCam(1, 8, 8);
   else setCam(1, graph.worldW < r.width ? (r.width - graph.worldW) / 2 : 8, 8);
@@ -862,14 +869,14 @@ function bounds(ids) {
     x1: Math.max(...ps.map(p => p.x)) + graph.W + 30, y1: Math.max(...ps.map(p => p.y)) + graph.H + 30 };
 }
 function fitsAt(ids, k) {
-  const b = bounds(ids), r = $("stage").getBoundingClientRect();
+  const b = bounds(ids), r = viewRect();
   return !!b && (b.x1 - b.x0) * k <= r.width && (b.y1 - b.y0) * k <= r.height;
 }
 // Show the step with its direct links when that stays readable (60% or more); otherwise centre it.
 function frameStep(id) {
   const n = byId[id]; if (!n || !graph || !graph.pos[id]) return;
   const ps = [id, ...n.deps, ...n.users].map(x => graph.pos[x]).filter(Boolean);
-  const r = $("stage").getBoundingClientRect(), M = 48;
+  const r = viewRect(), M = 48;
   const w = Math.max(...ps.map(p => p.x)) - Math.min(...ps.map(p => p.x)) + graph.W + 2 * M;
   const h = Math.max(...ps.map(p => p.y)) - Math.min(...ps.map(p => p.y)) + graph.H + 2 * M;
   const k = Math.min(1, r.width / w, r.height / h);
@@ -890,7 +897,7 @@ function stepActive(d) {
 function fitNodes(ids, floor = 0.45, ceil = 1.1) {
   const ps = ids.map(id => graph.pos[id]).filter(Boolean);
   if (!ps.length) return;
-  const r = $("stage").getBoundingClientRect();
+  const r = viewRect();
   const x0 = Math.min(...ps.map(p => p.x)) - 30, y0 = Math.min(...ps.map(p => p.y)) - 30;
   const x1 = Math.max(...ps.map(p => p.x)) + graph.W + 30, y1 = Math.max(...ps.map(p => p.y)) + graph.H + 30;
   const k = Math.max(floor, Math.min(ceil, r.width / (x1 - x0), r.height / (y1 - y0)));
@@ -914,7 +921,7 @@ function zoomAt(f, mx, my) {
 }
 function focusNode(id) {
   if (!graph || !graph.pos[id]) return;
-  const r = $("stage").getBoundingClientRect(), c = cams.get(data.id) || { k: 1 };
+  const r = viewRect(), c = cams.get(data.id) || { k: 1 };
   const k = Math.max(c.k, 1), p = graph.pos[id];
   // On a phone the step sits near the top, so its dependents show below it.
   const ty = phone() ? 24 - p.y * k : r.height / 2 - (p.y + graph.H / 2) * k;
@@ -1168,7 +1175,7 @@ function detail(n) {
   const meta = `<div class="meta">${cell("#" + n.order, "order", `${n.order} of ${data.nodes.length} in dependency order`)}${cell(n.level, "level")}${cell(esc(n.size || "–"), "size")}${cell(f.down.size, "depend on it", "steps that need this one, directly or not")}
     ${cell(runtime(e), "runtime")}${cell(e.retries ?? 0, "retries")}${cell(e.updated ? ago(e.updated) : "–", "last update", e.updated || "")}${cell(esc(e.who || "–"), "by")}</div>`;
   const hex = e.commit && /^[0-9a-f]{4,64}$/i.test(e.commit);
-  const pushState = !hex || !data.repo ? "" : n.unpushed ? ` · <span style="color:var(--peach)">not on ${esc(data.repo.upstream || "upstream")} yet</span>`
+  const pushState = !hex || !data.repo ? "" : n.unpushed ? ` · <span class="peach-ink">not on ${esc(data.repo.upstream || "upstream")} yet</span>`
     : e.commit in (data.repo.pushed || {}) ? " · pushed" : " · not found in this clone";
   const commit = e.commit ? `<div class="commit">commit <code>${esc(String(e.commit).slice(0, 10))}</code>${pushState}</div>` : "";
   const conflict = s === "done" && n.unmet.length ? `<div class="warnbox">Marked done while ${n.unmet.length} prerequisite${n.unmet.length > 1 ? "s are" : " is"} not done: ${n.unmet.map(id => `<a data-goto="${esc(id)}" href="javascript:void 0">${esc(id)}</a>`).join(", ")}.</div>` : "";
