@@ -52,7 +52,8 @@ let busy = false;
 const sel = () => route.step && byId[route.step] ? route.step : null;
 const phone = () => matchMedia("(max-width: 900px)").matches;
 const viewOf = id => prefs.view[id] || (matchMedia("(max-width: 900px)").matches ? "order" : "graph");
-const dirOf = id => prefs.dir[id] || (data && data.id === id && data.direction) || "TB";
+// Phones read top to bottom: links to a step sit above and below it, not off the sides.
+const dirOf = id => prefs.dir[id] || (phone() ? "TB" : (data && data.id === id && data.direction)) || "TB";
 const edgesOf = id => prefs.edges[id] || (data && data.id === id && data.edges) || "all";
 const offAreas = () => { if (!areasOff.has(route.project)) areasOff.set(route.project, new Set()); return areasOff.get(route.project); };
 
@@ -567,23 +568,41 @@ function buildGraph(sig) {
     const [ww, hh] = shape(w), k = Math.min((sr.width || 1200) / ww, (sr.height || 800) / hh);
     if (k > best + 1e-3) { best = k; WRAP = w; }
   }
-  const across = Math.max(1, Math.min(WRAP, longest));
-  const pos = {}, starts = [];
-  let cursor = lr ? 24 : 24;
+  // Filtered views flow their levels into rows (or columns) that fit the screen,
+  // so a long chain such as the critical path reads like text instead of one long line.
+  const flowMax = Math.max(lr ? W * 2 : H * 3, (lr ? sr.width || 1200 : sr.height || 800) - 48);
+  const flowing = LN.length < data.nodes.length;
+  const lens = levels.map(l => l.length ? Math.ceil(l.length / WRAP) * ((lr ? W : H) + SUB) - SUB : 0);
+  const rows = [];
   levels.forEach((l, li) => {
-    starts[li] = cursor;
     if (!l.length) return;
-    const bands = [];
-    for (let i = 0; i < l.length; i += WRAP) bands.push(l.slice(i, i + WRAP));
-    bands.forEach((band, bi) => band.forEach((n, i) => {
-      // Shorter columns sit centred against the tallest, as in the original VELA view.
-      if (lr) pos[n.id] = { x: cursor + bi * (W + SUB), y: TOP + (across - band.length) * (H + GAPY) / 2 + i * (H + GAPY) };
-      else pos[n.id] = { x: LEFT + (across - band.length) * (W + GAPX) / 2 + i * (W + GAPX), y: cursor + bi * (H + SUB) };
-    }));
-    cursor += bands.length * ((lr ? W : H) + SUB) - SUB + (lr ? GAPX : GAPY);
+    let row = rows[rows.length - 1];
+    if (!row || (flowing && row.len + lens[li] > flowMax)) rows.push(row = { lis: [], len: 0, across: 1 });
+    row.lis.push(li); row.len += lens[li] + (lr ? GAPX : GAPY);
+    row.across = Math.max(row.across, Math.min(WRAP, l.length));
   });
-  const worldW = lr ? cursor : LEFT + across * (W + GAPX) + 24;
-  const worldH = lr ? TOP + across * (H + GAPY) + 24 : cursor;
+  const ROWGAP = 64, pos = {}, starts = [], rowOff = [], rowOf = {};
+  let off = 0, alongMax = 0;
+  rows.forEach((row, ri) => {
+    let cursor = 24;
+    for (const li of row.lis) {
+      const l = levels[li];
+      starts[li] = cursor; rowOff[li] = off;
+      const bands = [];
+      for (let i = 0; i < l.length; i += WRAP) bands.push(l.slice(i, i + WRAP));
+      bands.forEach((band, bi) => band.forEach((n, i) => {
+        rowOf[n.id] = ri;
+        // Shorter columns sit centred against the tallest, as in the original VELA view.
+        if (lr) pos[n.id] = { x: cursor + bi * (W + SUB), y: off + TOP + (row.across - band.length) * (H + GAPY) / 2 + i * (H + GAPY) };
+        else pos[n.id] = { x: off + LEFT + (row.across - band.length) * (W + GAPX) / 2 + i * (W + GAPX), y: cursor + bi * (H + SUB) };
+      }));
+      cursor += lens[li] + (lr ? GAPX : GAPY);
+    }
+    alongMax = Math.max(alongMax, cursor);
+    row.off = off;
+    off += (lr ? TOP + row.across * (H + GAPY) : LEFT + row.across * (W + GAPX)) + (ri < rows.length - 1 ? ROWGAP : 24);
+  });
+  const worldW = lr ? alongMax : Math.max(off, 1), worldH = lr ? Math.max(off, 1) : alongMax;
 
   stage.innerHTML = `<div class="dotgrid"></div>`;
   stage.appendChild(canvasBar());
@@ -598,7 +617,7 @@ function buildGraph(sig) {
   const gL = svgEl("g", {}, vp), gE = svgEl("g", {}, vp), gN = svgEl("g", {}, vp);
   levels.forEach((l, li) => {
     if (!l.length) return;
-    const t = lr ? svgEl("text", { class: "lvl", x: starts[li], y: 26 }, gL) : svgEl("text", { class: "lvl", x: LEFT - 12, y: starts[li] + H / 2 + 4, "text-anchor": "end" }, gL);
+    const t = lr ? svgEl("text", { class: "lvl", x: starts[li], y: rowOff[li] + 26 }, gL) : svgEl("text", { class: "lvl", x: rowOff[li] + LEFT - 12, y: starts[li] + H / 2 + 4, "text-anchor": "end" }, gL);
     t.textContent = "L" + lvls[li];
     const done = l.filter(n => n.status === "done").length;
     // Counts fit beside a row label; columns are too narrow, so they get a second line.
@@ -611,7 +630,11 @@ function buildGraph(sig) {
     let p;
     // Bend points vary a little per edge, so parallel links fan out instead of stacking.
     const fan = 0.36 + 0.28 * ((edges.length * 7) % 5) / 4;
-    if (lr) { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, c = Math.max(28, (x2 - x1) * fan); p = `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`; }
+    const wrapped = rowOf[d] !== rowOf[n.id];
+    // A link into a later row runs out, along the gap between rows, and back in.
+    if (wrapped && lr) { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, ym = rows[rowOf[n.id]].off - ROWGAP / 2; p = `M${x1},${y1} H${x1 + 18} V${ym} H${x2 - 18} V${y2} H${x2}`; }
+    else if (wrapped) { const x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y, xm = rows[rowOf[n.id]].off - ROWGAP / 2; p = `M${x1},${y1} V${y1 + 16} H${xm} V${y2 - 16} H${x2} V${y2}`; }
+    else if (lr) { const x1 = a.x + W, y1 = a.y + H / 2, x2 = b.x, y2 = b.y + H / 2, c = Math.max(28, (x2 - x1) * fan); p = `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`; }
     else { const x1 = a.x + W / 2, y1 = a.y + H, x2 = b.x + W / 2, y2 = b.y, c = Math.max(24, (y2 - y1) / 2); p = `M${x1},${y1} C${x1},${y1 + c} ${x2},${y2 - c} ${x2},${y2}`; }
     edges.push({ from: d, to: n.id, el: svgEl("path", { class: "edge", d: p }, gE) });
   }
@@ -791,17 +814,18 @@ function edgePills() {
     st.appendChild(box);
   }
 }
-// Far out, every id is drawn at a fixed 11px on screen, shortened to fit its card.
+// Far out the graph is a status map: only steps in progress, blocked, selected or matching
+// a search carry a label, in full, at a fixed 12px on screen. Hover still names any step.
 function farIds(k) {
   if (!graph || k >= 0.45) return;
   const bucket = Math.round(k * 50);
   if (graph.farBucket === bucket) return;
   graph.farBucket = bucket;
-  const chars = Math.max(3, Math.floor((graph.W * k - 8) / (11 * 0.62)));
   for (const id in graph.els) {
     const t = graph.els[id].g.querySelector(".farid");
-    t.textContent = id.length <= chars ? id : id.slice(0, chars - 1) + "…";
-    t.style.fontSize = (11 / k).toFixed(1) + "px";
+    t.textContent = id;
+    t.style.fontSize = (12 / k).toFixed(1) + "px";
+    t.style.strokeWidth = (3 / k).toFixed(1) + "px";
   }
 }
 // The overview map starts folded on laptops, where it would cover steps; the choice is remembered.

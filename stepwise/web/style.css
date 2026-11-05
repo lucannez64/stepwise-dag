@@ -926,3 +926,12 @@ table.t .c-check .clamp { -webkit-line-clamp: 3; }
 /* dimmed steps keep readable titles; the fading is carried by borders and links */
 :root[data-theme="macchiato"] .node.dim .tt { fill: var(--sub0); }
 :root[data-theme="macchiato"] .node.dim .id { fill: var(--sub1); }
+/* far zoom: a status map; full names only where they matter */
+svg.far .node .farid { display: none; }
+svg.far .node.progress .farid, svg.far .node.blocked .farid, svg.far .node.sel .farid, svg.far .node.match .farid {
+  display: block; font-weight: 700; fill: var(--text); paint-order: stroke; stroke: var(--base); stroke-linejoin: round; }
+/* phone: graph controls sit on their own solid strip at the bottom of the canvas */
+@media (max-width: 900px) {
+  .canvasbar { left: 0; right: 0; bottom: 0; padding: 6px 8px; background: var(--mantle); border-top: 1px solid var(--s0); }
+  .canvasbar .zoom { box-shadow: none; }
+}
