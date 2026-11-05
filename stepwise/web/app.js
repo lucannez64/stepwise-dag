@@ -294,7 +294,8 @@ function closeMenus() {
   $("areaMenu").hidden = true; $("areaBtn").setAttribute("aria-expanded", "false");
   $("prefs").hidden = true; $("prefsBtn").setAttribute("aria-expanded", "false");
 }
-document.addEventListener("click", e => { if (!e.target.closest("#menu, #prefs, #switchBtn, #prefsBtn, #areaMenu, #areaBtn")) closeMenus(); });
+// Use the path from when the click happened: a popover may have redrawn and detached the clicked button since.
+document.addEventListener("click", e => { if (!e.composedPath().some(el => el instanceof Element && el.matches("#menu, #prefs, #switchBtn, #prefsBtn, #areaMenu, #areaBtn"))) closeMenus(); });
 
 // ------------------------------------------------------------------ home ----
 // Every home card has the same ten rows, so sections line up across a row of cards.
@@ -332,7 +333,7 @@ function renderHome() {
       ${ready ? `<details class="sec-ready"${phone() ? "" : " open"}><summary><h3>${phone() ? `Show next steps · ${p.ready.length}` : "Ready next"}</h3></summary><ul>${ready}</ul></details>`
         : p.active.length ? SLOT : '<div class="empty">Nothing ready</div>'}
       ${p.critical && p.critical.total ? `<div class="crit-line"><span class="muted small">${p.critical.computed ? "Longest chain" : "Critical path"}</span>${stackBar({ done: p.critical.done, total: p.critical.total, progress: 0, blocked: 0, ready: 0 }, "stack thin")}<span class="small"><b>${p.critical.done}</b>/${p.critical.total}</span></div>` : SLOT}
-      ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 80))}</div>` : SLOT}
+      ${p.log && p.log.length ? `<div class="last small"><span class="muted">Last activity</span> ${esc(ago(p.log[p.log.length - 1].t))} · <span class="mono">${esc(p.log[p.log.length - 1].step)}</span> ${esc(p.log[p.log.length - 1].msg.slice(0, 200))}</div>` : SLOT}
       <div class="foot">${r ? `<span><b>${esc(r.head || "?")}</b> ${esc(r.branch || "")}</span><span><b>${r.ahead ?? "–"}</b> ahead${r.dirty ? " · dirty" : ""}</span>` : ""}${p.load ? `<span>load <b>${p.load[0].toFixed(2)}</b></span>` : ""}${p.box ? `<span>box <b>${p.box[0].toFixed(2)}</b></span>` : ""}</div>
     </article>`;
   }).join("");
@@ -851,7 +852,10 @@ function setCam(k, tx, ty) {
 // The canvas area steps are framed in: the bottom strip holds the graph controls.
 function viewRect() {
   const r = $("stage").getBoundingClientRect();
-  return { width: r.width, height: phone() ? r.height : Math.max(200, r.height - 56) };
+  if (!phone()) return { width: r.width, height: Math.max(200, r.height - 56) };
+  // On a phone the details sheet covers the lower part of the canvas once a step is selected.
+  const sheetTop = sel() ? innerHeight * (1 - 0.62) : innerHeight;
+  return { width: r.width, height: Math.max(graph ? graph.H + 16 : 100, Math.min(r.height, sheetTop - Math.max(0, r.top))) };
 }
 function fitAll() {
   const r = viewRect();
@@ -945,8 +949,8 @@ function focusNode(id) {
   if (!graph || !graph.pos[id]) return;
   const r = viewRect(), c = cams.get(data.id) || { k: 1 };
   const k = Math.max(c.k, 1), p = graph.pos[id];
-  // On a phone the step sits near the top, so its dependents show below it.
-  const ty = phone() ? 24 - p.y * k : r.height / 2 - (p.y + graph.H / 2) * k;
+  // On a phone with nothing selected the step sits near the top, so its dependents show below it.
+  const ty = phone() && !sel() ? 24 - p.y * k : Math.max(8, (r.height - graph.H * k) / 2) - p.y * k;
   setCam(k, r.width / 2 - (p.x + graph.W / 2) * k, ty);
 }
 

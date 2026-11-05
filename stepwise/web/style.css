@@ -901,3 +901,20 @@ table.t td.c-updated { white-space: nowrap; }
 /* card counts: two even columns, so every card lines up */
 .card .counts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px; }
 .more-act { font-size: 12.5px; min-width: 0; }
+/* phone: search on its own row, then labelled views and the filter button */
+@media (max-width: 900px) {
+  .toolbar .search { flex: 1 0 100%; }
+  .toolbar > .seg:not(#filterSeg) { flex: 1 1 auto; display: flex; }
+  .toolbar > .seg:not(#filterSeg) button { flex: 1; justify-content: center; gap: 6px; min-height: 44px; }
+  .seg .vl { display: inline; }
+  #moreBtn { min-height: 44px; }
+}
+/* activity: three lines per entry; card summary: two lines */
+.feed .logrow .m { -webkit-line-clamp: 3; }
+.card .last { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* table: completion checks get about a third of the width; areas less */
+table.t td.c-check { width: 30%; min-width: 260px; max-width: none; }
+table.t td.c-area { min-width: 0; max-width: 140px; }
+table.t .c-check .clamp { -webkit-line-clamp: 3; }
+/* phone: the sheet lists the links, so the canvas labels stay out of the way */
+@media (max-width: 900px) { .app.sheet .epill, .app.sheet .epill-dock { display: none; } }
